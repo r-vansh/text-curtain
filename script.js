@@ -1,6 +1,9 @@
 /* =====================  Settings  ===================== */
+const SVG_SNIPPET = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-restore"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M3.06 13a9 9 0 1 0 .49 -4.087" /><path d="M3 4.001v5h5" /><path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /></svg>';
+
 const DEFAULTS = {
-  text: "VANSH RASTOGI // designer & developer // portfolio explorations // every thread is a line of text // move your cursor through the curtain",
+  // the default words: one SVG snippet repeated until it fills the 2400-letter limit
+  text: (" " + Array(7).fill(SVG_SNIPPET).join("  ")).slice(0, 2400),
   // per-letter styling of the text above: one hex digit per character, a sum of 1 bold, 2 italic, 4 underline, 8 strikethrough
   marks: "",
   font: "Geist", fontSize: 16, fontWeight: 400,
