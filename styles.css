@@ -1,0 +1,308 @@
+:root {
+  --panel-bg: #ffffff;
+  --panel-fg: #171717;
+  --panel-muted: #737373;
+  --panel-line: #e5e5e5;
+  --panel-field: #f5f5f5;
+  --accent: #171717;
+}
+html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Geist", system-ui, sans-serif; }
+canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+
+/* ---------- Parameter panel ---------- */
+#panel {
+  position: fixed; top: 16px; right: 16px; z-index: 10;
+  width: var(--panel-w, 300px); max-height: calc(100vh - 32px);
+  display: flex; flex-direction: column;
+  background: var(--panel-bg); color: var(--panel-fg);
+  border: 1px solid var(--panel-line); border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.10);
+  font-size: 13px; line-height: 1.4;
+}
+#panel header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; cursor: pointer; user-select: none;
+  border-bottom: 1px solid var(--panel-line);
+}
+#panel.collapsed header { border-bottom-color: transparent; }
+#panel header strong { font-weight: 600; font-size: 13px; letter-spacing: -.01em; }
+#panel header span { color: var(--panel-muted); font-size: 11px; }
+.hactions { display: flex; align-items: center; gap: 2px; }
+.hactions #toggleHint { margin-left: 6px; }
+.hbtn {
+  display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: #101011; cursor: pointer; transition: background .12s, opacity .12s;
+}
+.hbtn svg { width: 15px; height: 15px; display: block; }
+.hbtn:hover:not(:disabled) { background: #f0f0f1; }
+.hbtn:active:not(:disabled) { background: #e6e6e8; }
+.hbtn:disabled { opacity: .28; cursor: default; }
+.hbtn:focus-visible { outline: 2px solid #101011; outline-offset: 1px; }
+/* Minimal scrollbar, shared by every scrolling area (.minibar): a thin rounded thumb that stays
+   invisible until you hover the area or scroll it. */
+.minibar { scrollbar-width: thin; scrollbar-color: transparent transparent; }                /* Firefox */
+.minibar:hover, .minibar.scrolling { scrollbar-color: #c3c3c6 transparent; }
+.minibar::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+.minibar::-webkit-scrollbar-track { background: transparent; }
+.minibar::-webkit-scrollbar-corner { background: transparent; }
+.minibar::-webkit-scrollbar-resizer { background: transparent; }
+.minibar::-webkit-scrollbar-thumb {
+  background-color: transparent; border-radius: 4px;
+  border: 2px solid transparent; background-clip: padding-box;               /* 4px-wide thumb inside the 8px lane */
+  transition: background-color .18s ease;
+}
+.minibar:hover::-webkit-scrollbar-thumb, .minibar.scrolling::-webkit-scrollbar-thumb { background-color: #c3c3c6; }
+.minibar::-webkit-scrollbar-thumb:hover, .minibar::-webkit-scrollbar-thumb:active { background-color: #8e8e95; }
+
+/* panel body: the right padding is 6px (not 14px) because the 8px scrollbar lane makes up the difference */
+#panel .body { overflow-y: auto; overflow-x: hidden; padding: 4px 6px 14px 14px; }
+#panel.collapsed .body { display: none; }
+
+/* left-edge grabber for resizing the panel's width */
+#resizer {
+  position: absolute; left: -6px; top: 12px; bottom: 12px; width: 12px; cursor: ew-resize; z-index: 5; touch-action: none;
+}
+#resizer::after {
+  content: ""; position: absolute; left: 4px; top: 50%; width: 4px; height: 36px; margin-top: -18px;
+  border-radius: 2px; background: #dddddf; opacity: 0; transition: opacity .12s, background .12s;
+}
+#panel:hover #resizer::after { opacity: 1; }
+#resizer:hover::after, #panel.resizing #resizer::after { background: #8e8e95; opacity: 1; }
+html.panel-resizing, html.panel-resizing * { cursor: ew-resize !important; user-select: none !important; }
+#panel.resizing { transition: none; }
+
+/* collapsible category: title row with a chevron, fields animate open/closed */
+.cat { margin-top: 2px; }
+.cat-head {
+  display: flex; width: 100%; align-items: center; justify-content: space-between;
+  padding: 12px 0 16px; border: 0; background: none; color: var(--panel-fg); cursor: pointer; text-align: left;
+  font: 500 16px/1.2 "Geist", system-ui, sans-serif; letter-spacing: -.01em;
+}
+.cat-head svg { width: 12px; height: 12px; color: #8e8e95; transition: transform .18s ease; }
+.cat-head:hover svg { color: var(--panel-fg); }
+.cat-head:focus-visible { outline: 2px solid #101011; outline-offset: 2px; border-radius: 4px; }
+.cat.closed .cat-head svg { transform: rotate(-90deg); }
+.cat-body { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .2s ease; }
+.cat.closed .cat-body { grid-template-rows: 0fr; }
+.cat-body > .grid { min-height: 0; overflow: hidden; padding-bottom: 2px; transition: visibility 0s; }
+.cat.closed .cat-body > .grid { visibility: hidden; transition: visibility 0s linear .2s; }
+
+/* section title, inspector style ("Appearance") */
+.section { margin: 18px 0 10px; font-size: 13px; font-weight: 500; letter-spacing: -.005em; color: var(--panel-fg); }
+.section:first-child { margin-top: 12px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.grid > .field, .grid > .colors { grid-column: 1 / -1; }
+.field { margin-bottom: 4px; }
+.field .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.field label { font-weight: 400; font-size: 14px; letter-spacing: -.03em; color: #101011; }
+.field output { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--panel-muted); }
+
+.meta { display: flex; align-items: center; gap: 6px; }
+/* reset chip (Figma: 16x16, #ededee, radius 4, 10px icon) */
+.reset {
+  display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; padding: 0;
+  border: 0; border-radius: 4px; background: #ededee; cursor: pointer; visibility: hidden;
+  transition: background .12s;
+}
+.reset svg { display: block; width: 10px; height: 10px; }
+.reset:hover { background: #dddddf; }
+
+textarea, select {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; letter-spacing: -.03em; color: #101011;
+  background: #fcfcfd; border: 1px solid var(--pill-line); border-radius: 12px;
+  padding: 12px; outline: none; transition: border-color .12s, background .12s;
+  box-shadow: inset 0 -2px 1px rgba(0,0,0,.05);
+}
+textarea { resize: vertical; min-height: 76px; display: block; line-height: 1.3; }
+select { height: 40px; padding: 0 10px; cursor: pointer; }
+textarea:hover, select:hover { background: #f7f7f8; }
+textarea:focus, select:focus { border-color: var(--focus); background: #fcfcfd; }
+
+/* ---------- Rich text box (the Words field): looks like the other inputs, but shows the letter styling ---------- */
+.ed {
+  display: block; width: 100%; box-sizing: border-box; min-height: 76px; max-height: 220px; overflow: auto; resize: vertical;
+  padding: 12px; border: 1px solid var(--pill-line); border-radius: 12px; background: #fcfcfd; color: #101011;
+  font: 400 14px/1.3 "Geist", system-ui, sans-serif; letter-spacing: -.03em;
+  white-space: pre-wrap; overflow-wrap: anywhere; outline: none; box-shadow: inset 0 -2px 1px rgba(0,0,0,.05);
+  transition: border-color .12s, background .12s; caret-color: #101011;
+}
+.ed:hover { background: #f7f7f8; }
+.ed:focus { border-color: var(--focus); background: #fcfcfd; }
+.ed:empty::before { content: attr(data-placeholder); color: #8e8e95; pointer-events: none; }
+.ed::selection, .ed *::selection { background: rgba(16,16,17,.16); }
+
+.note { margin: -2px 0 2px; color: #8e8e95; font-size: 12px; letter-spacing: -.01em; }
+
+/* ---------- Format bar: bold / italic / underline / strikethrough for the selected letters ---------- */
+.fmt { display: flex; gap: 6px; margin-top: 8px; }
+.fmt-btn {
+  flex: 1; height: 32px; padding: 0; border: 1px solid #ededee; border-radius: 10px; background: #fcfcfd; color: #5c5c61;
+  font: 400 14px/1 "Geist", system-ui, sans-serif; cursor: pointer; box-shadow: inset 0 -2px 1px rgba(0,0,0,.05);
+  transition: background .12s, color .12s, opacity .12s;
+}
+.fmt-btn:hover:not(:disabled) { background: #f7f7f8; }
+.fmt-btn.on { background: linear-gradient(to bottom, #d8d8da, #cdcdd0); color: #2a2a2d; border-color: #cdcdd0; }
+.fmt-btn:disabled { opacity: .4; cursor: default; }
+.fmt-btn:focus-visible { outline: 2px solid #101011; outline-offset: 2px; }
+.f-b { font-weight: 700; } .f-i { font-style: italic; } .f-u { text-decoration: underline; } .f-s { text-decoration: line-through; }
+
+/* ---------- Dropdown (Figma "dropdown" component) ----------
+   default  #fcfcfd pill, 1px #ededee, radius 12, label colour #5c5c61, chevron chip at the right
+   hover    #f7f7f8, darker chip, chevron flips up
+   opened   a menu opens OVER the pill with the selected item lined up on it: 4px padding, radius 12,
+            soft shadow, 30px items (radius 8); the selected item has a grey gradient and a check,
+            the hovered item #f2f2f3 */
+.dd {
+  position: relative; display: flex; align-items: center; width: 100%; height: 40px; box-sizing: border-box;
+  padding: 0 12px; border: 1px solid #ededee; border-radius: 12px; background: #fcfcfd; color: #5c5c61;
+  font: 400 14px/1 "Geist", system-ui, sans-serif; letter-spacing: -.03em; text-align: left; cursor: pointer;
+  box-shadow: inset 0 -2px 1px rgba(0,0,0,.05); transition: background .12s;
+}
+.field.inline { display: flex; align-items: center; gap: 8px; }
+.field.inline > label { flex: none; width: 42px; white-space: nowrap; }   /* one label column, so every dropdown pill lines up */
+.dd-wrap { position: relative; flex: 1; min-width: 0; }
+.dd-reset { position: absolute; z-index: 2; right: 30px; top: 50%; margin-top: -8px; }
+.dd:hover, .dd.open { background: #f7f7f8; }
+.dd:focus-visible { outline: 2px solid #101011; outline-offset: 2px; }
+.dd-chip {
+  position: absolute; right: 8px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 4px;
+  background: #ededee; display: grid; place-items: center; transition: background .12s;
+}
+.dd-chip svg { display: block; width: 7px; height: 4px; transition: transform .15s ease; }
+.dd-chip path { stroke: #8e8e95; transition: stroke .12s; }
+.dd:hover .dd-chip, .dd.open .dd-chip { background: #dddddf; }
+.dd:hover .dd-chip svg, .dd.open .dd-chip svg { transform: rotate(180deg); }
+.dd:hover .dd-chip path, .dd.open .dd-chip path { stroke: #5c5c61; }
+
+.dd-menu {
+  position: fixed; z-index: 40; box-sizing: border-box; padding: 4px; border: 1px solid #ededee; border-radius: 12px;
+  background: #fcfcfd; box-shadow: 0 2px 2px rgba(0,0,0,.2), 0 4px 8px rgba(0,0,0,.1);   /* two layered shadows, from Figma */
+  font: 400 14px/1 "Geist", system-ui, sans-serif; letter-spacing: -.03em;
+  opacity: 0; transform: scale(.98); transform-origin: center; transition: opacity .1s ease, transform .1s ease;
+}
+.dd-menu.show { opacity: 1; transform: none; }
+.dd-item {
+  display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 12px;
+  border-radius: 8px; color: #5c5c61; cursor: pointer; user-select: none; -webkit-user-select: none;
+}
+.dd-item.act:not(.sel) { background: #f2f2f3; }
+.dd-item.sel { background: linear-gradient(to bottom, #d8d8da, #cdcdd0); color: #2a2a2d; }
+.dd-item svg { display: block; width: 12px; height: 12px; flex: none; }
+
+/* ---------- Scrub pill: from the Figma "Personal Portfolio" scrubby slider component ----------
+   default      #fcfcfd, 1px #ededee, radius 12, 12px padding, inset bottom shadow; label #8e8e95, value #101011
+   hover        #f7f7f8, dotted tick track + 4x30 handle (#dddddf) at the value's position
+   handle grab  handle turns #f7f7f8 with a .25px #8e8e95 outline and a hairline shadow
+   handle drag  #dddddf fill grows from the left to the handle, label fades out
+   click        1px #101011 border, typing mode (no handle / dots) */
+:root {
+  --pill-line: #ededee; --pill-bg: #fcfcfd; --pill-hover: #f7f7f8;
+  --g200: #dddddf; --g300: #c3c3c6; --g500: #8e8e95; --gmain: #101011; --focus: #101011;
+  --scrub-cursor: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724%27 height=%2724%27 viewBox=%270 0 24 24%27%3E%3Cpath d=%27M2.5 12 9 7v10zM21.5 12 15 7v10z%27 fill=%27black%27 stroke=%27white%27 stroke-width=%271.5%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") 12 12, ew-resize;
+}
+.grid { grid-template-columns: 1fr; }
+.num {
+  position: relative; display: flex; align-items: center; gap: 8px; min-width: 0;
+  height: 40px; padding: 0 12px; box-sizing: border-box; border-radius: 12px;
+  background: var(--pill-bg); border: 1px solid var(--pill-line);
+  font-size: 14px; line-height: 1; letter-spacing: -.03em; color: var(--gmain);
+  cursor: var(--scrub-cursor); user-select: none; -webkit-user-select: none; touch-action: pan-y;
+  transition: background .12s, border-color .12s;
+}
+.num::after {                                  /* inset bottom shadow, above the fill */
+  content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 -2px 1px rgba(0,0,0,.05);
+}
+.num:hover, .num.dragging { background: var(--pill-hover); }
+.num.editing { background: var(--pill-bg); border-color: var(--focus); cursor: text; }
+.num > :not(.track):not(.reset) { position: relative; z-index: 1; }
+.num .track { position: absolute; inset: 0; border-radius: 11px; overflow: hidden; pointer-events: none; }
+
+.num .dots {                                   /* 9 dots, evenly spread across the track */
+  position: absolute; left: 11px; right: 11px; top: 18px; height: 2px;   /* dot centres span 12px..w-12px, same as the handle */
+  display: flex; justify-content: space-between; opacity: 0; transition: opacity .12s;
+}
+.num .dots i { width: 2px; height: 2px; border-radius: 50%; background: var(--g200); }
+.num .fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: var(--p, 0px);
+  background: var(--g200); border-radius: 11px 0 0 11px; opacity: 0; transition: opacity .12s;
+}
+.num .fill .dots { right: auto; left: 11px; width: calc(var(--pw, 100px) + 2px); opacity: 1; }
+.num .fill .dots i { background: var(--g300); }
+.num .handle {
+  position: absolute; top: 50%; left: var(--p, 0px); width: 4px; height: 30px; margin: -15px 0 0 -2px;
+  box-sizing: border-box; background: var(--g200); border: .25px solid transparent; border-radius: 12px;
+  opacity: 0; transition: opacity .12s, background .12s;
+}
+.num:hover .dots, .num.dragging .dots { opacity: 1; }
+.num:hover .handle, .num.dragging .handle { opacity: 1; }
+.num.grab .handle, .num.dragging .handle {
+  background: var(--pill-hover); border-color: var(--g500); box-shadow: 0 0 1px rgba(0,0,0,.3);
+}
+.num.dragging .fill { opacity: 1; }
+.num.editing .dots, .num.editing .handle, .num.editing .fill { opacity: 0; }
+
+.num .lbl {
+  flex: 0 1 auto; min-width: 0; color: var(--g500);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .12s;
+}
+.num.dragging .lbl { opacity: 0; }
+.num .val { display: inline-grid; flex: none; font-variant-numeric: tabular-nums; }
+.num .val::after { content: attr(data-v); padding-right: 1px; visibility: hidden; white-space: pre; grid-area: 1 / 1; font: inherit; }
+.num input {
+  /* width 0 + min-width 100%: the input takes the width of the hidden mirror text (::after), instead of its own
+     default width, so the unit sits right next to the number */
+  grid-area: 1 / 1; width: 0; min-width: 100%; border: 0; outline: 0; background: transparent; padding: 0; margin: 0;
+  font: inherit; letter-spacing: inherit; font-variant-numeric: tabular-nums; color: inherit; cursor: inherit; caret-color: var(--focus);
+}
+.num.editing input { cursor: text; }
+.num input::selection { background: rgba(16,16,17,.14); }
+.num .unit { flex: none; margin-left: -8px; }
+.num .reset { position: absolute; z-index: 3; right: 8px; top: 50%; margin-top: -8px; }
+html.scrubbing, html.scrubbing * { cursor: var(--scrub-cursor) !important; user-select: none !important; }
+
+.colors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.colors .field { margin: 0; }
+.colors .row { margin-bottom: 4px; }
+.colors label { font-weight: 400; font-size: 14px; letter-spacing: -.03em; color: var(--g500); }
+input[type=color] {
+  width: 100%; height: 40px; padding: 6px; box-sizing: border-box; cursor: pointer;
+  background: var(--pill-bg); border: 1px solid var(--pill-line); border-radius: 12px;
+  box-shadow: inset 0 -2px 1px rgba(0,0,0,.05); transition: background .12s;
+}
+input[type=color]:hover { background: var(--pill-hover); }
+input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type=color]::-webkit-color-swatch { border: 0; border-radius: 5px; }
+input[type=color]::-moz-color-swatch { border: 0; border-radius: 5px; }
+
+.buttons { display: flex; gap: 8px; margin-top: 16px; }
+/* Buttons from the Figma "btn" components: 40px tall, 24px side padding, radius 12, Geist 14px */
+.buttons button {
+  position: relative; flex: 1; height: 40px; padding: 0 24px; box-sizing: border-box;
+  font: 400 14px/1 "Geist", system-ui, sans-serif; letter-spacing: -.03em; text-align: center; white-space: nowrap;
+  border-radius: 12px; cursor: pointer; transition: filter .12s, transform .06s;
+}
+.buttons button::after {                       /* inset highlight / shadow layer */
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+}
+.buttons button:active { transform: translateY(1px); }
+.buttons button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* primary: radial gradient #57575c -> #101011, light inner bottom glow, #f7f7f8 text */
+.buttons button.primary {
+  border: 0; color: #f7f7f8; background-color: #101011; background-size: 100% 100%;
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 119 40' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none'><rect x='0' y='0' height='100%' width='100%' fill='url(%23grad)' opacity='1'/><defs><radialGradient id='grad' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='10' gradientTransform='matrix(1.6045 4.9474 -12.724 2.5575 43.455 -9.4737)'><stop stop-color='rgba(87,87,92,1)' offset='0'/><stop stop-color='rgba(69,69,73,1)' offset='0.25'/><stop stop-color='rgba(51,51,54,1)' offset='0.5'/><stop stop-color='rgba(34,34,36,1)' offset='0.75'/><stop stop-color='rgba(16,16,17,1)' offset='1'/></radialGradient></defs></svg>");
+}
+.buttons button.primary::after { box-shadow: inset 0 -2px 4px rgba(255,255,255,.3); }
+.buttons button.primary:hover { filter: brightness(1.18); }
+
+/* secondary: #fcfcfd, 1px #ededee border, #101011 text, soft inset bottom shadow */
+.buttons button.secondary { border: 1px solid #ededee; background: #fcfcfd; color: #101011; }
+.buttons button.secondary::after { box-shadow: inset 0 -2px 1px rgba(0,0,0,.05); }
+.buttons button.secondary:hover { background: #f7f7f8; }
+kbd { font-family: "Geist Mono", monospace; background: var(--panel-field); border-radius: 4px; padding: 1px 5px; }
+
+@media (max-width: 520px) {
+  #panel { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-height: 55vh; }
+  #resizer { display: none; }
+}
