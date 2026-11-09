@@ -70,7 +70,6 @@ const FIELDS = [
 
   // sound (rope mode): the finger plucks the lines like harp strings, each with its own pitch
   { section: "Sound", modes: ["Rope"] },
-  { key: "sound", type: "select", label: "Sound", options: ["On", "Off"], modes: ["Rope"] },
   { type: "note", id: "sndNote", text: "Click the page once to unlock audio.", modes: ["Rope"] },
   { key: "sndVolume", type: "range", label: "Volume", min: 0, max: 1, step: 0.05, modes: ["Rope"] },
   { key: "sndScale", type: "select", label: "Scale", options: ["Pentatonic", "Major", "Minor", "Blues", "Whole tone", "Chromatic", "Free"], modes: ["Rope"] },
@@ -251,7 +250,44 @@ function sndWarm() {
   };
   warmTimer = setTimeout(next, 50);
 }
+/* the sound button next to "Show panel": lit while audio is live; otherwise it shows muted, and a click unlocks it */
+const sndLive = () => S.sound === "On" && !!Snd.ctx && Snd.ctx.state === "running";
+/* On a fresh load audio is locked until the first click, so while the panel is hidden the floating sound button pulses
+   and a small bubble beside it says what to do. Any click unlocks audio, which ends the prompt. */
+const sndPromptEl = document.createElement("div");
+sndPromptEl.id = "sndPrompt"; sndPromptEl.textContent = "Click to turn on sound";
+document.body.appendChild(sndPromptEl);
+let sndPromptDone = false;                           // the prompt ends for good after 5 seconds or on the first click / key press
+const endSndPrompt = () => { if (!sndPromptDone) { sndPromptDone = true; sndPromptUpdate(); } };
+setTimeout(endSndPrompt, 5000);
+addEventListener("pointerdown", endSndPrompt, { capture: true });
+addEventListener("keydown", endSndPrompt, { capture: true });
+function sndPromptUpdate() {
+  const b = document.getElementById("soundBtn"), pn = document.getElementById("panel");
+  if (!b) return;
+  const want = !sndPromptDone && !sndLive() && S.sound === "On" && S.mode === "Rope" && pn.classList.contains("collapsed");
+  b.classList.toggle("prompt", want);
+  sndPromptEl.classList.toggle("show", want);
+  if (!want) return;
+  const r = b.getBoundingClientRect(), t = sndPromptEl.getBoundingClientRect();
+  let y = r.bottom + 8;
+  if (y + t.height > innerHeight - 4) y = r.top - 8 - t.height;                            // bottom of the screen (phone): go above
+  sndPromptEl.style.left = Math.max(4, Math.min(innerWidth - t.width - 4, r.right - t.width)) + "px";
+  sndPromptEl.style.top = y + "px";
+}
+addEventListener("resize", () => sndPromptUpdate());
+function sndBtnUpdate() {
+  const live = sndLive();
+  for (const b of document.querySelectorAll(".sndbtn")) {     // the floating one (panel hidden) and the one in the panel header
+    b.classList.toggle("on", live);
+    b.hidden = S.mode !== "Rope";                     // fabric mode has no sound
+    b.dataset.tip = live ? "Mute" : "Unmute";
+    b.setAttribute("aria-label", b.dataset.tip); b.setAttribute("aria-pressed", String(live));
+  }
+  sndPromptUpdate();
+}
 function sndStatus() {
+  sndBtnUpdate();
   const el = document.getElementById("sndNote");
   if (!el) return;
   if (sndLastErr) { el.textContent = "Sound error: " + sndLastErr; el.style.visibility = "visible"; return; }   // say what went wrong
@@ -259,8 +295,10 @@ function sndStatus() {
   el.style.visibility = (S.sound === "On" && !(Snd.ctx && Snd.ctx.state === "running")) ? "visible" : "hidden";
 }
 // browsers only allow audio after a click or key press, so the first one anywhere on the page unlocks it
-addEventListener("pointerdown", sndUnlock, { capture: true });
-addEventListener("keydown", sndUnlock, { capture: true });
+// any press unlocks audio, except on the sound button: its own click decides (unlock if still locked, otherwise mute)
+const unlockOnInput = e => { if (!(e.target.closest && e.target.closest(".sndbtn"))) sndUnlock(); };
+addEventListener("pointerdown", unlockOnInput, { capture: true });
+addEventListener("keydown", unlockOnInput, { capture: true });
 
 /* A plucked string (Karplus-Strong): a burst of noise circulates in a delay line the length of one period,
    and is softened a little on every pass, which makes it ring at `freq` and fade like a real string. */
@@ -683,6 +721,7 @@ addEventListener("keydown", e => {
 
 /* Show only the controls (and sections) that belong to the current mode. */
 function applyMode() {
+  sndBtnUpdate();
   for (const el of body.querySelectorAll("[data-modes]")) {
     el.style.display = el.dataset.modes.split(",").includes(S.mode) ? "" : "none";
   }
@@ -820,7 +859,7 @@ function makeFormatBar(ta) {
   const buttons = FORMATS.map(f => {
     const b = document.createElement("button");
     b.type = "button"; b.className = "fmt-btn " + f.cls; b.textContent = f.label;
-    b.title = `${f.name} (${f.keys}): select some letters first`; b.setAttribute("aria-label", f.name); b.setAttribute("aria-pressed", "false");
+    b.dataset.tip = f.name; b.dataset.key = f.keys; b.setAttribute("aria-label", f.name); b.setAttribute("aria-pressed", "false");
     // keep the textarea's focus and selection when the button is pressed
     b.addEventListener("mousedown", e => e.preventDefault());
     b.addEventListener("click", () => apply(f.bit));
@@ -860,7 +899,7 @@ function makeFormatBar(ta) {
 
 function makeReset() {
   const b = document.createElement("button");
-  b.type = "button"; b.className = "reset"; b.title = "Reset to default"; b.setAttribute("aria-label", "Reset to default");
+  b.type = "button"; b.className = "reset"; b.dataset.tip = "Reset to default"; b.setAttribute("aria-label", "Reset to default");
   b.innerHTML = '<svg viewBox="0 0 10 10" fill="none" stroke="#8E8E95" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="M2.49631 7.78998C3.1807 8.40453 4.06709 8.74611 4.9869 8.74975C5.90671 8.75339 6.79578 8.41885 7.48502 7.80974C8.17426 7.20063 8.6156 6.35945 8.72509 5.44618C8.83458 4.5329 8.6046 3.61123 8.07888 2.85646C7.55316 2.10169 6.76837 1.56646 5.87376 1.35257C4.97916 1.13868 4.03715 1.26105 3.22688 1.6964C2.41661 2.13175 1.79461 2.84971 1.47917 3.71375"/>' +
     '<path d="M1.25 1.66709V3.75042H3.33333"/></svg>';
@@ -1239,7 +1278,7 @@ const setPanelW = w => {
   panel.style.setProperty("--panel-w", UI.w + "px");
 };
 const resizer = document.createElement("div");
-resizer.id = "resizer"; resizer.title = "Drag to resize, double-click to reset";
+resizer.id = "resizer"; resizer.dataset.tip = "Drag to resize, double-click to reset";
 resizer.setAttribute("role", "separator"); resizer.setAttribute("aria-orientation", "vertical");
 panel.appendChild(resizer);
 let rz = null;
@@ -1279,12 +1318,23 @@ function syncControls() { for (const k in controls) controls[k].set(S[k]); docum
 document.getElementById("reCloth").onclick = () => build();
 document.getElementById("reAll").onclick = () => { S = { ...DEFAULTS }; save(); syncControls(); build(); record("*", true); };
 
-const hintEl = document.getElementById("toggleHint");
+// the header's hide button is a plain .hbtn; a click on it bubbles up to the header, which toggles
 function toggle() {
   panel.classList.toggle("collapsed");
-  hintEl.textContent = panel.classList.contains("collapsed") ? "Show ▾" : "Hide ▴";
+  panel.classList.remove("peek");
+  sndPromptUpdate();
 }
 document.getElementById("panelHead").addEventListener("click", toggle);
+for (const b of document.querySelectorAll(".sndbtn")) b.addEventListener("click", e => {
+  e.stopPropagation();                                // the header button must not toggle the panel
+  S.sound = sndLive() ? "Off" : "On";                 // live -> mute; muted or still locked -> turn on (applyEffect unlocks audio)
+  applyEffect("sound");
+});
+const showTab = document.getElementById("showTab");
+showTab.addEventListener("click", toggle);
+// hovering (or focusing) the show button makes the hidden panel peek out; any toggle ends the peek
+const peek = on => panel.classList.toggle("peek", on && panel.classList.contains("collapsed"));
+for (const [ev, on] of [["mouseenter", true], ["focus", true], ["mouseleave", false], ["blur", false]]) showTab.addEventListener(ev, () => peek(on));
 addEventListener("keydown", e => {
   if (e.key.toLowerCase() === "h" && !/^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName) && !document.activeElement.isContentEditable) toggle();
 });
@@ -1298,6 +1348,54 @@ document.addEventListener(scroll, e => {
   clearTimeout(el._barTimer);
   el._barTimer = setTimeout(() => el.classList.remove(scrolling), 700);
 }, { capture: true, passive: true });
+
+/* =====================  Tooltip  =====================
+   Any element with data-tip="Label" (and optionally data-key="Ctrl+Z") gets this tooltip: a dark pill with the label and one
+   keycap per key. It shows after a short delay on hover or keyboard focus, below the element (above if there's no room). */
+const tipEl = document.createElement("div");
+tipEl.id = "tip"; tipEl.setAttribute("role", "tooltip");
+document.body.appendChild(tipEl);
+let tipTarget = null, tipTimer = 0;
+function hideTip() { clearTimeout(tipTimer); tipTarget = null; tipEl.classList.remove("show"); }
+function showTip(el) {
+  tipEl.textContent = "";
+  const label = document.createElement("span");
+  label.textContent = el.dataset.tip;
+  tipEl.appendChild(label);
+  const keys = (el.dataset.key || "").split("+").filter(Boolean);
+  if (keys.length) {
+    const wrap = document.createElement("span");
+    wrap.className = "keys";
+    for (const k of keys) {
+      const kc = document.createElement("kbd");
+      kc.textContent = k;
+      wrap.appendChild(kc);
+    }
+    tipEl.appendChild(wrap);
+  }
+  const r = el.getBoundingClientRect(), t = tipEl.getBoundingClientRect(), gap = 2;
+  let y = r.bottom + gap;
+  if (y + t.height > innerHeight - 4) y = r.top - gap - t.height;                       // no room below: flip above
+  const x = Math.max(4, Math.min(innerWidth - t.width - 4, r.left + r.width / 2 - t.width / 2));
+  tipEl.style.left = x + "px"; tipEl.style.top = y + "px";
+  tipEl.classList.add("show");
+}
+function tipEnter(e, delay) {
+  const el = e.target.closest && e.target.closest("[data-tip]");
+  if (!el || el === tipTarget) return;
+  hideTip();
+  if (el.classList.contains("prompt")) return;                                          // the sound prompt bubble already says it
+  tipTarget = el;
+  if (!delay) showTip(el);                                                              // no delay: show as soon as the pointer is over it
+  else tipTimer = setTimeout(() => { if (document.contains(el)) showTip(el); else hideTip(); }, delay);
+}
+document.addEventListener("mouseover", e => tipEnter(e, 100));
+document.addEventListener("focusin", e => { if (e.target.matches && e.target.matches(":focus-visible")) tipEnter(e, 0); });
+document.addEventListener("mouseout", e => { if (tipTarget && !tipTarget.contains(e.relatedTarget)) hideTip(); });
+document.addEventListener("focusout", hideTip);
+document.addEventListener("pointerdown", hideTip, true);
+document.addEventListener("keydown", hideTip, true);
+document.addEventListener("scroll", hideTip, true);
 
 /* =====================  Go  ===================== */
 syncControls();

@@ -24,11 +24,77 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-act
   padding: 12px 14px; cursor: pointer; user-select: none;
   border-bottom: 1px solid var(--panel-line);
 }
-#panel.collapsed header { border-bottom-color: transparent; }
+/* custom tooltip (script.js, "Tooltip"): dark pill, label + keycaps. From the Figma "btn" node. */
+#tip {
+  position: fixed; left: 0; top: 0; z-index: 30; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; gap: 8px; padding: 6px; border-radius: 6px;
+  background: #101011; color: #f7f7f8;
+  font: 400 12px/1 "Geist Mono", ui-monospace, monospace; letter-spacing: -.03em; white-space: nowrap;
+  opacity: 0; transform: translateY(-2px); transition: opacity .08s, transform .08s;
+}
+#tip.show { opacity: 1; transform: none; }
+#tip .keys { display: flex; align-items: center; gap: 4px; }
+#tip kbd {
+  box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 3px; margin: 0; border-radius: 2px;
+  display: grid; place-items: center; background: #a8a8ad; color: #101011;
+  font: 400 12px/1 "Geist Mono", ui-monospace, monospace; letter-spacing: -.03em;
+}
+/* hidden: the whole panel slides off the right edge and a small tab stays behind to bring it back */
+#panel { transition: transform .28s cubic-bezier(.2,.8,.2,1), opacity .2s, visibility 0s; }
+#panel.collapsed { transform: translateX(calc(100% + 24px)); opacity: 0; visibility: hidden; pointer-events: none; transition: transform .28s cubic-bezier(.2,.8,.2,1), opacity .2s, visibility 0s .28s; }
+/* the show tab: a small panel-styled square where the panel's corner was, same border, radius and shadow */
+#showTab {
+  position: fixed; top: 16px; right: 16px; z-index: 11; width: 32px; height: 32px; padding: 0 8px; box-sizing: border-box;
+  display: flex; flex-direction: row-reverse; align-items: center; gap: 6px; overflow: hidden;
+  border: 1px solid var(--panel-line); border-radius: 10px;
+  background: var(--panel-bg); color: var(--panel-fg); cursor: pointer; box-shadow: 0 8px 30px rgba(0,0,0,.10);
+  font: 500 12px/1 "Geist", system-ui, sans-serif; letter-spacing: -.01em; white-space: nowrap;
+  transform: translateX(8px) scale(.9); opacity: 0; pointer-events: none;
+  transition: transform .28s cubic-bezier(.2,.8,.2,1), opacity .2s, background .12s, width .26s cubic-bezier(.2,.8,.2,1);
+}
+#showTab svg { width: 15px; height: 15px; display: block; flex: none; }
+#showTab { width: 104px; }   /* always shown in full: icon + "Show panel" */
+/* hovering the show button: the panel peeks out from behind it (the JS sets .peek) */
+#panel.collapsed.peek { transform: translateX(calc(100% - 20px)); opacity: 1; visibility: visible; transition: transform .28s cubic-bezier(.2,.8,.2,1), opacity .2s, visibility 0s; }
+#showTab:hover { background: #f0f0f1; }
+#showTab:active { background: #e6e6e8; }
+#showTab:focus-visible { outline: 2px solid #101011; outline-offset: 1px; }
+/* the sound button sits to the left of the show pill and appears with it */
+#soundBtn {
+  position: fixed; top: 16px; right: 128px; z-index: 11; width: 32px; height: 32px; padding: 0;
+  display: grid; place-items: center; border: 1px solid var(--panel-line); border-radius: 10px;
+  background: var(--panel-bg); color: var(--panel-muted); cursor: pointer; box-shadow: 0 8px 30px rgba(0,0,0,.10);
+  transform: translateX(8px) scale(.9); opacity: 0; pointer-events: none;
+  transition: transform .28s cubic-bezier(.2,.8,.2,1), opacity .2s, background .12s, color .12s;
+}
+/* first-load prompt: the sound button pulses and a bubble explains (script.js, sndPromptUpdate) */
+#sndPrompt {
+  position: fixed; left: 0; top: 0; z-index: 12; pointer-events: none; padding: 6px; border-radius: 6px;
+  background: #101011; color: #f7f7f8; font: 400 12px/1 "Geist Mono", ui-monospace, monospace; letter-spacing: -.03em; white-space: nowrap;
+  opacity: 0; transform: translateY(-2px); transition: opacity .2s, transform .2s;
+}
+#sndPrompt.show { opacity: 1; transform: none; transition-delay: .5s; }
+@keyframes sndPulse {
+  0%   { box-shadow: 0 8px 30px rgba(0,0,0,.10), 0 0 0 0 rgba(16,16,17,.28); }
+  100% { box-shadow: 0 8px 30px rgba(0,0,0,.10), 0 0 0 10px rgba(16,16,17,0); }
+}
+#soundBtn.prompt { animation: sndPulse 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { #soundBtn.prompt { animation: none; } }
+.sndbtn[hidden] { display: none; }
+#soundBtn svg { width: 15px; height: 15px; display: block; }
+#soundBtn.on { color: var(--panel-fg); }
+.sndbtn .waves { display: none; }
+.sndbtn.on .waves { display: inline; }
+.sndbtn.on .mute { display: none; }
+.hbtn.sndbtn:not(.on) { color: var(--panel-muted); }   /* the header copy: muted until audio is live */
+#soundBtn:hover { background: #f0f0f1; }
+#soundBtn:active { background: #e6e6e8; }
+#soundBtn:focus-visible { outline: 2px solid #101011; outline-offset: 1px; }
+#panel.collapsed ~ #soundBtn { transform: none; opacity: 1; pointer-events: auto; transition-delay: .14s; }
+#panel.collapsed ~ #showTab { transform: none; opacity: 1; pointer-events: auto; transition-delay: .1s; }
 #panel header strong { font-weight: 600; font-size: 13px; letter-spacing: -.01em; }
 #panel header span { color: var(--panel-muted); font-size: 11px; }
 .hactions { display: flex; align-items: center; gap: 2px; }
-.hactions #toggleHint { margin-left: 6px; }
 .hbtn {
   display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px;
   background: transparent; color: #101011; cursor: pointer; transition: background .12s, opacity .12s;
@@ -56,7 +122,6 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-act
 
 /* panel body: the right padding is 6px (not 14px) because the 8px scrollbar lane makes up the difference */
 #panel .body { overflow-y: auto; overflow-x: hidden; padding: 4px 6px 14px 14px; }
-#panel.collapsed .body { display: none; }
 
 /* left-edge grabber for resizing the panel's width */
 #resizer {
@@ -305,4 +370,8 @@ kbd { font-family: "Geist Mono", monospace; background: var(--panel-field); bord
 @media (max-width: 520px) {
   #panel { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-height: 55vh; }
   #resizer { display: none; }
+  #panel.collapsed { transform: translateY(calc(100% + 16px)); }
+  #panel.collapsed.peek { transform: translateY(calc(100% - 20px)); }
+  #showTab { top: auto; bottom: 8px; right: 8px; }
+  #soundBtn { top: auto; bottom: 8px; right: 120px; }
 }
