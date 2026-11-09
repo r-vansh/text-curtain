@@ -1,0 +1,1647 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text Curtain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&family=Geist+Pixel&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --panel-bg: #ffffff;
+    --panel-fg: #171717;
+    --panel-muted: #737373;
+    --panel-line: #e5e5e5;
+    --panel-field: #f5f5f5;
+    --accent: #171717;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Geist", system-ui, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+
+  /* ---------- Parameter panel ---------- */
+  #panel {
+    position: fixed; top: 16px; right: 16px; z-index: 10;
+    width: var(--panel-w, 300px); max-height: calc(100vh - 32px);
+    display: flex; flex-direction: column;
+    background: var(--panel-bg); color: var(--panel-fg);
+    border: 1px solid var(--panel-line); border-radius: 14px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.10);
+    font-size: 13px; line-height: 1.4;
+  }
+  #panel header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; cursor: pointer; user-select: none;
+    border-bottom: 1px solid var(--panel-line);
+  }
+  #panel.collapsed header { border-bottom-color: transparent; }
+  #panel header strong { font-weight: 600; font-size: 13px; letter-spacing: -.01em; }
+  #panel header span { color: var(--panel-muted); font-size: 11px; }
+  .hactions { display: flex; align-items: center; gap: 2px; }
+  .hactions #toggleHint { margin-left: 6px; }
+  .hbtn {
+    display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px;
+    background: transparent; color: #101011; cursor: pointer; transition: background .12s, opacity .12s;
+  }
+  .hbtn svg { width: 15px; height: 15px; display: block; }
+  .hbtn:hover:not(:disabled) { background: #f0f0f1; }
+  .hbtn:active:not(:disabled) { background: #e6e6e8; }
+  .hbtn:disabled { opacity: .28; cursor: default; }
+  .hbtn:focus-visible { outline: 2px solid #101011; outline-offset: 1px; }
+  /* Minimal scrollbar, shared by every scrolling area (.minibar): a thin rounded thumb that stays
+     invisible until you hover the area or scroll it. */
+  .minibar { scrollbar-width: thin; scrollbar-color: transparent transparent; }                /* Firefox */
+  .minibar:hover, .minibar.scrolling { scrollbar-color: #c3c3c6 transparent; }
+  .minibar::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+  .minibar::-webkit-scrollbar-track { background: transparent; }
+  .minibar::-webkit-scrollbar-corner { background: transparent; }
+  .minibar::-webkit-scrollbar-resizer { background: transparent; }
+  .minibar::-webkit-scrollbar-thumb {
+    background-color: transparent; border-radius: 4px;
+    border: 2px solid transparent; background-clip: padding-box;               /* 4px-wide thumb inside the 8px lane */
+    transition: background-color .18s ease;
+  }
+  .minibar:hover::-webkit-scrollbar-thumb, .minibar.scrolling::-webkit-scrollbar-thumb { background-color: #c3c3c6; }
+  .minibar::-webkit-scrollbar-thumb:hover, .minibar::-webkit-scrollbar-thumb:active { background-color: #8e8e95; }
+
+  /* panel body: the right padding is 6px (not 14px) because the 8px scrollbar lane makes up the difference */
+  #panel .body { overflow-y: auto; overflow-x: hidden; padding: 4px 6px 14px 14px; }
+  #panel.collapsed .body { display: none; }
+
+  /* left-edge grabber for resizing the panel's width */
+  #resizer {
+    position: absolute; left: -6px; top: 12px; bottom: 12px; width: 12px; cursor: ew-resize; z-index: 5; touch-action: none;
+  }
+  #resizer::after {
+    content: ""; position: absolute; left: 4px; top: 50%; width: 4px; height: 36px; margin-top: -18px;
+    border-radius: 2px; background: #dddddf; opacity: 0; transition: opacity .12s, background .12s;
+  }
+  #panel:hover #resizer::after { opacity: 1; }
+  #resizer:hover::after, #panel.resizing #resizer::after { background: #8e8e95; opacity: 1; }
+  html.panel-resizing, html.panel-resizing * { cursor: ew-resize !important; user-select: none !important; }
+  #panel.resizing { transition: none; }
+
+  /* collapsible category: title row with a chevron, fields animate open/closed */
+  .cat { margin-top: 2px; }
+  .cat-head {
+    display: flex; width: 100%; align-items: center; justify-content: space-between;
+    padding: 12px 0 16px; border: 0; background: none; color: var(--panel-fg); cursor: pointer; text-align: left;
+    font: 500 16px/1.2 "Geist", system-ui, sans-serif; letter-spacing: -.01em;
+  }
+  .cat-head svg { width: 12px; height: 12px; color: #8e8e95; transition: transform .18s ease; }
+  .cat-head:hover svg { color: var(--panel-fg); }
+  .cat-head:focus-visible { outline: 2px solid #101011; outline-offset: 2px; border-radius: 4px; }
+  .cat.closed .cat-head svg { transform: rotate(-90deg); }
+  .cat-body { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .2s ease; }
+  .cat.closed .cat-body { grid-template-rows: 0fr; }
+  .cat-body > .grid { min-height: 0; overflow: hidden; padding-bottom: 2px; transition: visibility 0s; }
+  .cat.closed .cat-body > .grid { visibility: hidden; transition: visibility 0s linear .2s; }
+
+  /* section title, inspector style ("Appearance") */
+  .section { margin: 18px 0 10px; font-size: 13px; font-weight: 500; letter-spacing: -.005em; color: var(--panel-fg); }
+  .section:first-child { margin-top: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid > .field, .grid > .colors { grid-column: 1 / -1; }
+  .field { margin-bottom: 4px; }
+  .field .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .field label { font-weight: 400; font-size: 14px; letter-spacing: -.03em; color: #101011; }
+  .field output { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--panel-muted); }
+
+  .meta { display: flex; align-items: center; gap: 6px; }
+  /* reset chip (Figma: 16x16, #ededee, radius 4, 10px icon) */
+  .reset {
+    display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; padding: 0;
+    border: 0; border-radius: 4px; background: #ededee; cursor: pointer; visibility: hidden;
+    transition: background .12s;
+  }
+  .reset svg { display: block; width: 10px; height: 10px; }
+  .reset:hover { background: #dddddf; }
+
+  textarea, select {
+    width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; letter-spacing: -.03em; color: #101011;
+    background: #fcfcfd; border: 1px solid var(--pill-line); border-radius: 12px;
+    padding: 12px; outline: none; transition: border-color .12s, background .12s;
+    box-shadow: inset 0 -2px 1px rgba(0,0,0,.05);
+  }
+  textarea { resize: vertical; min-height: 76px; display: block; line-height: 1.3; }
+  select { height: 40px; padding: 0 10px; cursor: pointer; }
+  textarea:hover, select:hover { background: #f7f7f8; }
+  textarea:focus, select:focus { border-color: var(--focus); background: #fcfcfd; }
+
+  /* ---------- Rich text box (the Words field): looks like the other inputs, but shows the letter styling ---------- */
+  .ed {
+    display: block; width: 100%; box-sizing: border-box; min-height: 76px; max-height: 220px; overflow: auto; resize: vertical;
+    padding: 12px; border: 1px solid var(--pill-line); border-radius: 12px; background: #fcfcfd; color: #101011;
+    font: 400 14px/1.3 "Geist", system-ui, sans-serif; letter-spacing: -.03em;
+    white-space: pre-wrap; overflow-wrap: anywhere; outline: none; box-shadow: inset 0 -2px 1px rgba(0,0,0,.05);
+    transition: border-color .12s, background .12s; caret-color: #101011;
+  }
+  .ed:hover { background: #f7f7f8; }
+  .ed:focus { border-color: var(--focus); background: #fcfcfd; }
+  .ed:empty::before { content: attr(data-placeholder); color: #8e8e95; pointer-events: none; }
+  .ed::selection, .ed *::selection { background: rgba(16,16,17,.16); }
+
+  .note { margin: -2px 0 2px; color: #8e8e95; font-size: 12px; letter-spacing: -.01em; }
+
+  /* ---------- Format bar: bold / italic / underline / strikethrough for the selected letters ---------- */
+  .fmt { display: flex; gap: 6px; margin-top: 8px; }
+  .fmt-btn {
+    flex: 1; height: 32px; padding: 0; border: 1px solid #ededee; border-radius: 10px; background: #fcfcfd; color: #5c5c61;
+    font: 400 14px/1 "Geist", system-ui, sans-serif; cursor: pointer; box-shadow: inset 0 -2px 1px rgba(0,0,0,.05);
+    transition: background .12s, color .12s, opacity .12s;
+  }
+  .fmt-btn:hover:not(:disabled) { background: #f7f7f8; }
+  .fmt-btn.on { background: linear-gradient(to bottom, #d8d8da, #cdcdd0); color: #2a2a2d; border-color: #cdcdd0; }
+  .fmt-btn:disabled { opacity: .4; cursor: default; }
+  .fmt-btn:focus-visible { outline: 2px solid #101011; outline-offset: 2px; }
+  .f-b { font-weight: 700; } .f-i { font-style: italic; } .f-u { text-decoration: underline; } .f-s { text-decoration: line-through; }
+
+  /* ---------- Dropdown (Figma "dropdown" component) ----------
+     default  #fcfcfd pill, 1px #ededee, radius 12, label colour #5c5c61, chevron chip at the right
+     hover    #f7f7f8, darker chip, chevron flips up
+     opened   a menu opens OVER the pill with the selected item lined up on it: 4px padding, radius 12,
+              soft shadow, 30px items (radius 8); the selected item has a grey gradient and a check,
+              the hovered item #f2f2f3 */
+  .dd {
+    position: relative; display: flex; align-items: center; width: 100%; height: 40px; box-sizing: border-box;
+    padding: 0 12px; border: 1px solid #ededee; border-radius: 12px; background: #fcfcfd; color: #5c5c61;
+    font: 400 14px/1 "Geist", system-ui, sans-serif; letter-spacing: -.03em; text-align: left; cursor: pointer;
+    box-shadow: inset 0 -2px 1px rgba(0,0,0,.05); transition: background .12s;
+  }
+  .field.inline { display: flex; align-items: center; gap: 8px; }
+  .field.inline > label { flex: none; width: 42px; white-space: nowrap; }   /* one label column, so every dropdown pill lines up */
+  .dd-wrap { position: relative; flex: 1; min-width: 0; }
+  .dd-reset { position: absolute; z-index: 2; right: 30px; top: 50%; margin-top: -8px; }
+  .dd:hover, .dd.open { background: #f7f7f8; }
+  .dd:focus-visible { outline: 2px solid #101011; outline-offset: 2px; }
+  .dd-chip {
+    position: absolute; right: 8px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 4px;
+    background: #ededee; display: grid; place-items: center; transition: background .12s;
+  }
+  .dd-chip svg { display: block; width: 7px; height: 4px; transition: transform .15s ease; }
+  .dd-chip path { stroke: #8e8e95; transition: stroke .12s; }
+  .dd:hover .dd-chip, .dd.open .dd-chip { background: #dddddf; }
+  .dd:hover .dd-chip svg, .dd.open .dd-chip svg { transform: rotate(180deg); }
+  .dd:hover .dd-chip path, .dd.open .dd-chip path { stroke: #5c5c61; }
+
+  .dd-menu {
+    position: fixed; z-index: 40; box-sizing: border-box; padding: 4px; border: 1px solid #ededee; border-radius: 12px;
+    background: #fcfcfd; box-shadow: 0 2px 2px rgba(0,0,0,.2), 0 4px 8px rgba(0,0,0,.1);   /* two layered shadows, from Figma */
+    font: 400 14px/1 "Geist", system-ui, sans-serif; letter-spacing: -.03em;
+    opacity: 0; transform: scale(.98); transform-origin: center; transition: opacity .1s ease, transform .1s ease;
+  }
+  .dd-menu.show { opacity: 1; transform: none; }
+  .dd-item {
+    display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 12px;
+    border-radius: 8px; color: #5c5c61; cursor: pointer; user-select: none; -webkit-user-select: none;
+  }
+  .dd-item.act:not(.sel) { background: #f2f2f3; }
+  .dd-item.sel { background: linear-gradient(to bottom, #d8d8da, #cdcdd0); color: #2a2a2d; }
+  .dd-item svg { display: block; width: 12px; height: 12px; flex: none; }
+
+  /* ---------- Scrub pill: from the Figma "Personal Portfolio" scrubby slider component ----------
+     default      #fcfcfd, 1px #ededee, radius 12, 12px padding, inset bottom shadow; label #8e8e95, value #101011
+     hover        #f7f7f8, dotted tick track + 4x30 handle (#dddddf) at the value's position
+     handle grab  handle turns #f7f7f8 with a .25px #8e8e95 outline and a hairline shadow
+     handle drag  #dddddf fill grows from the left to the handle, label fades out
+     click        1px #101011 border, typing mode (no handle / dots) */
+  :root {
+    --pill-line: #ededee; --pill-bg: #fcfcfd; --pill-hover: #f7f7f8;
+    --g200: #dddddf; --g300: #c3c3c6; --g500: #8e8e95; --gmain: #101011; --focus: #101011;
+    --scrub-cursor: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724%27 height=%2724%27 viewBox=%270 0 24 24%27%3E%3Cpath d=%27M2.5 12 9 7v10zM21.5 12 15 7v10z%27 fill=%27black%27 stroke=%27white%27 stroke-width=%271.5%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") 12 12, ew-resize;
+  }
+  .grid { grid-template-columns: 1fr; }
+  .num {
+    position: relative; display: flex; align-items: center; gap: 8px; min-width: 0;
+    height: 40px; padding: 0 12px; box-sizing: border-box; border-radius: 12px;
+    background: var(--pill-bg); border: 1px solid var(--pill-line);
+    font-size: 14px; line-height: 1; letter-spacing: -.03em; color: var(--gmain);
+    cursor: var(--scrub-cursor); user-select: none; -webkit-user-select: none; touch-action: pan-y;
+    transition: background .12s, border-color .12s;
+  }
+  .num::after {                                  /* inset bottom shadow, above the fill */
+    content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; pointer-events: none;
+    box-shadow: inset 0 -2px 1px rgba(0,0,0,.05);
+  }
+  .num:hover, .num.dragging { background: var(--pill-hover); }
+  .num.editing { background: var(--pill-bg); border-color: var(--focus); cursor: text; }
+  .num > :not(.track):not(.reset) { position: relative; z-index: 1; }
+  .num .track { position: absolute; inset: 0; border-radius: 11px; overflow: hidden; pointer-events: none; }
+
+  .num .dots {                                   /* 9 dots, evenly spread across the track */
+    position: absolute; left: 11px; right: 11px; top: 18px; height: 2px;   /* dot centres span 12px..w-12px, same as the handle */
+    display: flex; justify-content: space-between; opacity: 0; transition: opacity .12s;
+  }
+  .num .dots i { width: 2px; height: 2px; border-radius: 50%; background: var(--g200); }
+  .num .fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: var(--p, 0px);
+    background: var(--g200); border-radius: 11px 0 0 11px; opacity: 0; transition: opacity .12s;
+  }
+  .num .fill .dots { right: auto; left: 11px; width: calc(var(--pw, 100px) + 2px); opacity: 1; }
+  .num .fill .dots i { background: var(--g300); }
+  .num .handle {
+    position: absolute; top: 50%; left: var(--p, 0px); width: 4px; height: 30px; margin: -15px 0 0 -2px;
+    box-sizing: border-box; background: var(--g200); border: .25px solid transparent; border-radius: 12px;
+    opacity: 0; transition: opacity .12s, background .12s;
+  }
+  .num:hover .dots, .num.dragging .dots { opacity: 1; }
+  .num:hover .handle, .num.dragging .handle { opacity: 1; }
+  .num.grab .handle, .num.dragging .handle {
+    background: var(--pill-hover); border-color: var(--g500); box-shadow: 0 0 1px rgba(0,0,0,.3);
+  }
+  .num.dragging .fill { opacity: 1; }
+  .num.editing .dots, .num.editing .handle, .num.editing .fill { opacity: 0; }
+
+  .num .lbl {
+    flex: 0 1 auto; min-width: 0; color: var(--g500);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .12s;
+  }
+  .num.dragging .lbl { opacity: 0; }
+  .num .val { display: inline-grid; flex: none; font-variant-numeric: tabular-nums; }
+  .num .val::after { content: attr(data-v); padding-right: 1px; visibility: hidden; white-space: pre; grid-area: 1 / 1; font: inherit; }
+  .num input {
+    /* width 0 + min-width 100%: the input takes the width of the hidden mirror text (::after), instead of its own
+       default width, so the unit sits right next to the number */
+    grid-area: 1 / 1; width: 0; min-width: 100%; border: 0; outline: 0; background: transparent; padding: 0; margin: 0;
+    font: inherit; letter-spacing: inherit; font-variant-numeric: tabular-nums; color: inherit; cursor: inherit; caret-color: var(--focus);
+  }
+  .num.editing input { cursor: text; }
+  .num input::selection { background: rgba(16,16,17,.14); }
+  .num .unit { flex: none; margin-left: -8px; }
+  .num .reset { position: absolute; z-index: 3; right: 8px; top: 50%; margin-top: -8px; }
+  html.scrubbing, html.scrubbing * { cursor: var(--scrub-cursor) !important; user-select: none !important; }
+
+  .colors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .colors .field { margin: 0; }
+  .colors .row { margin-bottom: 4px; }
+  .colors label { font-weight: 400; font-size: 14px; letter-spacing: -.03em; color: var(--g500); }
+  input[type=color] {
+    width: 100%; height: 40px; padding: 6px; box-sizing: border-box; cursor: pointer;
+    background: var(--pill-bg); border: 1px solid var(--pill-line); border-radius: 12px;
+    box-shadow: inset 0 -2px 1px rgba(0,0,0,.05); transition: background .12s;
+  }
+  input[type=color]:hover { background: var(--pill-hover); }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type=color]::-webkit-color-swatch { border: 0; border-radius: 5px; }
+  input[type=color]::-moz-color-swatch { border: 0; border-radius: 5px; }
+
+  .buttons { display: flex; gap: 8px; margin-top: 16px; }
+  /* Buttons from the Figma "btn" components: 40px tall, 24px side padding, radius 12, Geist 14px */
+  .buttons button {
+    position: relative; flex: 1; height: 40px; padding: 0 24px; box-sizing: border-box;
+    font: 400 14px/1 "Geist", system-ui, sans-serif; letter-spacing: -.03em; text-align: center; white-space: nowrap;
+    border-radius: 12px; cursor: pointer; transition: filter .12s, transform .06s;
+  }
+  .buttons button::after {                       /* inset highlight / shadow layer */
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  }
+  .buttons button:active { transform: translateY(1px); }
+  .buttons button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* primary: radial gradient #57575c -> #101011, light inner bottom glow, #f7f7f8 text */
+  .buttons button.primary {
+    border: 0; color: #f7f7f8; background-color: #101011; background-size: 100% 100%;
+    background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 119 40' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none'><rect x='0' y='0' height='100%' width='100%' fill='url(%23grad)' opacity='1'/><defs><radialGradient id='grad' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='10' gradientTransform='matrix(1.6045 4.9474 -12.724 2.5575 43.455 -9.4737)'><stop stop-color='rgba(87,87,92,1)' offset='0'/><stop stop-color='rgba(69,69,73,1)' offset='0.25'/><stop stop-color='rgba(51,51,54,1)' offset='0.5'/><stop stop-color='rgba(34,34,36,1)' offset='0.75'/><stop stop-color='rgba(16,16,17,1)' offset='1'/></radialGradient></defs></svg>");
+  }
+  .buttons button.primary::after { box-shadow: inset 0 -2px 4px rgba(255,255,255,.3); }
+  .buttons button.primary:hover { filter: brightness(1.18); }
+
+  /* secondary: #fcfcfd, 1px #ededee border, #101011 text, soft inset bottom shadow */
+  .buttons button.secondary { border: 1px solid #ededee; background: #fcfcfd; color: #101011; }
+  .buttons button.secondary::after { box-shadow: inset 0 -2px 1px rgba(0,0,0,.05); }
+  .buttons button.secondary:hover { background: #f7f7f8; }
+  kbd { font-family: "Geist Mono", monospace; background: var(--panel-field); border-radius: 4px; padding: 1px 5px; }
+
+  @media (max-width: 520px) {
+    #panel { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-height: 55vh; }
+    #resizer { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<aside id="panel">
+  <header id="panelHead">
+    <strong>Text Curtain</strong>
+    <span class="hactions">
+      <button id="undoBtn" class="hbtn" type="button" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3.5 2.5 6.5l3 3"/><path d="M2.5 6.5H9a3.5 3.5 0 0 1 0 7H6"/></svg>
+      </button>
+      <button id="redoBtn" class="hbtn" type="button" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5H7a3.5 3.5 0 0 0 0 7h3"/></svg>
+      </button>
+      <span id="toggleHint">Hide ▴</span>
+    </span>
+  </header>
+  <div class="body minibar" id="panelBody"></div>
+</aside>
+
+<script>
+/* =====================  Settings  ===================== */
+const DEFAULTS = {
+  text: "VANSH RASTOGI // designer & developer // portfolio explorations // every thread is a line of text // move your cursor through the curtain",
+  // per-letter styling of the text above: one hex digit per character, a sum of 1 bold, 2 italic, 4 underline, 8 strikethrough
+  marks: "",
+  font: "Geist", fontSize: 10, fontWeight: 400,
+  textWidth: 600, maxHeight: 2000, cellX: 9, cellY: 12,
+  mode: "Rope",                            // "Rope": every line hangs on its own. "Fabric": lines are linked to their neighbours
+  // rope
+  stiffness: 16, swing: 0.994, gravity: 0.8, variation: 0.6,
+  // sound (rope mode): every line is a string with its own pitch
+  sound: "On", sndVolume: 0.6, sndScale: "Pentatonic", sndRoot: "C", sndOctave: 3, sndRange: 2, sndTone: "Pluck", sndRing: 1.6,
+  // fabric (the first version's values)
+  fStiffness: 4, fSwing: 0.985, fPullBack: 0.0009, fGravity: 0.35,
+  fRadius: 90, fPush: 1.4, fDrag: 0.25,
+  radius: 18,                              // finger size (px)
+  grab: "On",                              // press on a line to pick it up and move it around
+  pushLimit: 26,                           // how far (px) the finger can carry a line sideways before it slips past
+  ink: "#1a1a1a", bg: "#f5f4f0",
+  _v: 4                                    // settings version (4 = finger cursor)
+};
+
+/* Panel layout. effect: "rebuild" = rebuild the cloth, "chars" = re-lay out the text. */
+const FIELDS = [
+  { section: "Text" },
+  { key: "text", type: "textarea", label: "Words", effect: "chars" },
+  { key: "font", type: "select", label: "Font", options: ["Geist Pixel", "Geist", "Geist Mono"], preview: true },
+  /* range fields render as scrub pills: `short` sits inside the pill, `label` is the hover tooltip */
+  { key: "fontSize", type: "range", label: "Font size", short: "Size", min: 6, max: 28, step: 1, unit: "px" },
+  { key: "fontWeight", type: "range", label: "Font weight", short: "Weight", min: 100, max: 900, step: 100 },
+
+  { section: "Layout" },
+  { key: "textWidth", type: "range", label: "Text width", short: "Width", min: 100, max: 1600, step: 10, unit: "px", effect: "rebuild" },
+  { key: "maxHeight", type: "range", label: "Max height", min: 60, max: 2000, step: 10, unit: "px", effect: "rebuild" },   // how far down the lines hang from the top
+  // The text is vertical: letters run DOWN a column, and each column is a line.
+  // cellY = gap between letters (vertical), cellX = gap between columns/lines (horizontal).
+  { key: "cellY", type: "range", label: "Letter spacing", min: 6, max: 40, step: 0.5, unit: "px", effect: "rebuild" },
+  { key: "cellX", type: "range", label: "Line spacing", min: 5, max: 30, step: 0.5, unit: "px", effect: "rebuild" },
+
+  // Rope: every line is its own rope, pinned at the top and swinging under gravity (no links between lines).
+  // Fabric: neighbouring lines are linked, so the whole thing moves like a curtain of cloth.
+  // Rope: every line hangs on its own and the cursor is a solid finger.
+  // Fabric: neighbouring lines are linked and the cursor pushes the cloth away (the first version).
+  // `modes` says which mode a control or a whole section belongs to; the panel shows only the current mode's.
+  { section: "Physics" },
+  { key: "mode", type: "select", label: "Mode", options: ["Rope", "Fabric"] },
+  { key: "gravity", type: "range", label: "Gravity", min: 0.1, max: 3, step: 0.05, modes: ["Rope"] },
+  { key: "swing", type: "range", label: "Swing length", min: 0.9, max: 0.999, step: 0.001, modes: ["Rope"] },
+  { key: "stiffness", type: "range", label: "Tautness", min: 4, max: 32, step: 1, modes: ["Rope"] },
+  { key: "variation", type: "range", label: "Variation per line", min: 0, max: 1, step: 0.05, modes: ["Rope"] },
+  { key: "fGravity", type: "range", label: "Gravity", min: 0, max: 2, step: 0.05, modes: ["Fabric"] },
+  { key: "fSwing", type: "range", label: "Swing length", min: 0.9, max: 0.999, step: 0.001, modes: ["Fabric"] },
+  { key: "fStiffness", type: "range", label: "Stiffness", min: 1, max: 10, step: 1, modes: ["Fabric"] },
+  { key: "fPullBack", type: "range", label: "Pull back to rest", min: 0, max: 0.01, step: 0.0001, modes: ["Fabric"] },
+
+  // rope: the cursor is a solid finger, so it pushes lines aside on contact
+  { section: "Finger", modes: ["Rope"] },
+  { key: "radius", type: "range", label: "Finger size", min: 4, max: 80, step: 1, unit: "px", modes: ["Rope"] },
+  { key: "pushLimit", type: "range", label: "Push limit", min: 10, max: 600, step: 5, unit: "px", modes: ["Rope"] },
+  { key: "grab", type: "select", label: "Grab", options: ["On", "Off"], modes: ["Rope"] },
+
+  // fabric: the cursor shoves the cloth away from a distance and drags it along
+  { section: "Cursor", modes: ["Fabric"] },
+  { key: "fRadius", type: "range", label: "Reach", min: 30, max: 300, step: 5, unit: "px", modes: ["Fabric"] },
+  { key: "fPush", type: "range", label: "Push strength", min: 0, max: 4, step: 0.1, modes: ["Fabric"] },
+  { key: "fDrag", type: "range", label: "Drag along", min: 0, max: 1, step: 0.05, modes: ["Fabric"] },
+
+  // sound (rope mode): the finger plucks the lines like harp strings, each with its own pitch
+  { section: "Sound", modes: ["Rope"] },
+  { key: "sound", type: "select", label: "Sound", options: ["On", "Off"], modes: ["Rope"] },
+  { type: "note", id: "sndNote", text: "Click the page once to unlock audio.", modes: ["Rope"] },
+  { key: "sndVolume", type: "range", label: "Volume", min: 0, max: 1, step: 0.05, modes: ["Rope"] },
+  { key: "sndScale", type: "select", label: "Scale", options: ["Pentatonic", "Major", "Minor", "Blues", "Whole tone", "Chromatic", "Free"], modes: ["Rope"] },
+  { key: "sndRoot", type: "select", label: "Key", options: ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], modes: ["Rope"] },
+  { key: "sndOctave", type: "range", label: "Lowest octave", min: 1, max: 6, step: 1, modes: ["Rope"] },
+  { key: "sndRange", type: "range", label: "Range", min: 1, max: 4, step: 0.5, unit: " oct", modes: ["Rope"] },
+  { key: "sndTone", type: "select", label: "Tone", options: ["Pluck", "Sine", "Triangle"], modes: ["Rope"] },
+  { key: "sndRing", type: "range", label: "Ring time", min: 0.2, max: 4, step: 0.1, unit: "s", modes: ["Rope"] },
+
+  { section: "Colors" },
+  { type: "colors" }
+];
+
+let S = { ...DEFAULTS };
+try {
+  const saved = JSON.parse(localStorage.getItem("curtainSettings") || "{}");
+  // settings saved before the rope physics (no _v) used cloth values; drop those so the new defaults apply
+  if (saved._v !== 4) for (const k of ["gravity", "swing", "stiffness", "pullBack", "radius", "push", "drag"]) delete saved[k];
+  delete saved.push; delete saved.drag;
+  delete saved.pullBack;
+  Object.assign(S, saved);
+} catch (e) {}
+const save = () => { try { localStorage.setItem("curtainSettings", JSON.stringify(S)); } catch (e) {} };
+
+/* =====================  Cloth  ===================== */
+const cvs = document.getElementById("c");
+const ctx = cvs.getContext("2d");
+let W, H, dpr, cols, rows, pts, ropes, cons;   // ropes[c] = the particles of line c, top (pinned) to bottom
+const mouse = { x: -999, y: -999, px: -999, py: -999 };
+
+function build() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cvs.width = W * dpr; cvs.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  cols = Math.max(1, Math.floor(Math.min(W, S.textWidth) / S.cellX));
+  rows = Math.max(2, Math.floor(Math.min(H, S.maxHeight) / S.cellY));   // lines hang from the top, down to the window or Max height
+  const offX = (W - (cols - 1) * S.cellX) / 2;
+  pts = [];
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = offX + c * S.cellX, y = r * S.cellY + 6;
+      pts.push({ x, y, ox: x, oy: y, px: x, py: y, pin: r === 0, ch: " ", m: 0 });
+    }
+  }
+  // one independent rope per column; lines are NOT linked to each other
+  ropes = [];
+  for (let c = 0; c < cols; c++) {
+    const rope = [];
+    for (let r = 0; r < rows; r++) rope.push(pts[r * cols + c]);
+    ropes.push(rope);
+  }
+  // fabric links: every letter to its right-hand and lower neighbour
+  cons = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const a = pts[r * cols + c];
+      if (c < cols - 1) cons.push([a, pts[r * cols + c + 1], S.cellX]);
+      if (r < rows - 1) cons.push([a, pts[(r + 1) * cols + c], S.cellY]);
+    }
+  }
+  grab = null; rpKey = ""; loadT = 0;          // gravity eases in after a rebuild, so the ropes settle instead of dropping
+  assignChars();
+}
+
+/* Each line gets its own character: a different gravity (so a different swing period) and damping. `variation` (0..1) sets how different they are. The numbers are
+   deterministic per column, so a line always behaves the same after a rebuild. */
+let rpKey = "", rpVal = [], loadT = 0;
+// Speed limit for any letter, in px per frame. A finger near the pinned end acts on a very short lever, so a
+// gentle swipe would whip the far end of the rope around at hundreds of px per frame. A freely swinging line
+// never goes much faster than ~20, so this only ever tames flicks.
+const MAX_SPEED = 24;
+const LINK_DAMP = 0.3;                      // share of the stretch/compress speed removed per frame
+const rnd = (c, k) => { const x = Math.sin(c * 127.1 + k * 311.7 + 1.7) * 43758.5453; return x - Math.floor(x); };
+function ropeParams() {
+  const v = S.variation;
+  const key = cols + "|" + S.swing + "|" + v;
+  if (key !== rpKey) {
+    rpKey = key; rpVal = [];
+    for (let c = 0; c < cols; c++) {
+      rpVal.push({
+        // vary the LOSS (1 - damp) by up to +-v/2, so no line ends up with almost no damping at all
+        damp: Math.min(0.9995, Math.max(0.9, 1 - (1 - S.swing) * (1 + (rnd(c, 1) - 0.5) * v))),
+        g: 1 + (rnd(c, 2) - 0.5) * v * 1.2         // gravity multiplier -> swing speed
+      });
+    }
+  }
+  return rpVal;
+}
+
+/* Text is shown once, reading top to bottom, continuing in the next column.
+   The block is centred; everything else stays blank. */
+let hasMarks = false;
+let lineK = [], lineN = 0;     // lineK[c] = rank of line c among the lines that hold letters (-1 = empty line)
+function assignChars() {
+  // 1:1 with the textarea (a newline becomes one space), so a selection's index is also the letter's index
+  const t = S.text.replace(/[\r\n]/g, " ");
+  const marks = normMarks(S.marks, t.length);
+  const needed = Math.max(1, Math.ceil(t.length / rows));
+  const startCol = Math.max(0, Math.floor((cols - needed) / 2));
+  for (const p of pts) { p.ch = " "; p.m = 0; }
+  hasMarks = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = startCol + Math.floor(i / rows), r = i % rows;
+    if (c >= cols) continue;
+    const p = pts[r * cols + c];
+    p.ch = t[i];
+    p.m = parseInt(marks[i], 16) || 0;
+    if (p.m && t[i] !== " ") hasMarks = true;
+  }
+  // number the lines that actually show letters, left to right: the empty lines are invisible, so they stay silent
+  lineK = new Array(cols).fill(-1); lineN = 0;
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) if (pts[r * cols + c].ch !== " ") { lineK[c] = lineN++; break; }
+  }
+}
+
+/* ===================== Sound (rope mode) =====================
+   Each line that shows letters is a string with its own pitch, spread left to right over the chosen scale.
+   The finger plucks a line when it touches it: sweep across the curtain and you play a run of notes like a harp.
+   How hard you pluck (finger speed) sets the volume; the line's position sets the stereo pan. */
+const SCALES = {
+  "Pentatonic": [0, 2, 4, 7, 9], "Major": [0, 2, 4, 5, 7, 9, 11], "Minor": [0, 2, 3, 5, 7, 8, 10],
+  "Blues": [0, 3, 5, 6, 7, 10], "Whole tone": [0, 2, 4, 6, 8, 10], "Chromatic": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+};
+const ROOTS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const midiToHz = m => 440 * Math.pow(2, (m - 69) / 12);
+
+/* pitch of the k-th (of n) text lines */
+function lineFreq(k, n) {
+  const base = 12 * (S.sndOctave + 1) + Math.max(0, ROOTS.indexOf(S.sndRoot));    // MIDI note of the key (C4 = 60)
+  if (S.sndScale === "Free" || !SCALES[S.sndScale]) return midiToHz(base) * Math.pow(2, S.sndRange * (n > 1 ? k / (n - 1) : 0));
+  const sc = SCALES[S.sndScale];
+  const total = Math.max(1, Math.round(S.sndRange * sc.length) + 1);               // notes available across the range
+  const idx = n > 1 ? Math.round(k / (n - 1) * (total - 1)) : 0;
+  return midiToHz(base + Math.floor(idx / sc.length) * 12 + sc[idx % sc.length]);
+}
+
+const Snd = { ctx: null, master: null, voices: 0, cache: new Map(), broken: false, built: 0 };
+let sndErrors = 0, sndLastErr = "";
+function sndFail(e) {                                       // anything unexpected in the audio code: log it, and give up only if it keeps happening
+  console.error("sound error:", e);
+  sndLastErr = (e && e.message) ? e.message : String(e);
+  sndStatus();
+  if (++sndErrors >= 5) { Snd.broken = true; console.error("sound disabled after repeated errors"); }
+}
+function sndUnlock() {
+  try {
+    if (Snd.broken) return;
+    if (!Snd.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      Snd.ctx = new AC({ latencyHint: "interactive" });
+      Snd.master = Snd.ctx.createGain();
+      const comp = Snd.ctx.createDynamicsCompressor();     // keeps a fast sweep of many notes from clipping
+      Snd.master.connect(comp); comp.connect(Snd.ctx.destination);
+      sndWarm();
+    }
+    if (Snd.ctx.state === "suspended") Snd.ctx.resume().then(sndStatus, () => {});
+    sndStatus();
+  } catch (e) { sndFail(e); }
+}
+
+/* Building a plucked-string sound takes a little work, so it is done ahead of time, a few at a time while the
+   page is idle, for every line that shows letters. Then the first sweep of the finger only has to play them. */
+let warmTimer = 0;
+function sndWarm() {
+  clearTimeout(warmTimer);
+  if (!Snd.ctx || Snd.broken || S.sound !== "On" || S.sndTone !== "Pluck") return;
+  let k = 0;
+  const next = () => {
+    if (k >= lineN || k >= 48 || Snd.broken) return;
+    try { pluckBuffer(lineFreq(k, lineN), S.sndRing, true); } catch (e) { sndFail(e); return; }
+    k++;
+    warmTimer = setTimeout(next, 12);
+  };
+  warmTimer = setTimeout(next, 50);
+}
+function sndStatus() {
+  const el = document.getElementById("sndNote");
+  if (!el) return;
+  if (sndLastErr) { el.textContent = "Sound error: " + sndLastErr; el.style.visibility = "visible"; return; }   // say what went wrong
+  el.textContent = "Click the page once to unlock audio.";
+  el.style.visibility = (S.sound === "On" && !(Snd.ctx && Snd.ctx.state === "running")) ? "visible" : "hidden";
+}
+// browsers only allow audio after a click or key press, so the first one anywhere on the page unlocks it
+addEventListener("pointerdown", sndUnlock, { capture: true });
+addEventListener("keydown", sndUnlock, { capture: true });
+
+/* A plucked string (Karplus-Strong): a burst of noise circulates in a delay line the length of one period,
+   and is softened a little on every pass, which makes it ring at `freq` and fade like a real string. */
+function pluckBuffer(freq, ring, warming) {
+  const key = freq.toFixed(2) + "|" + ring;
+  let buf = Snd.cache.get(key);
+  if (buf) return buf;
+  // at most 3 new sounds per frame while playing (the rest use the cheap fallback voice), so a sweep over many
+  // not-yet-built lines can never stall the page
+  if (!warming && Snd.built >= 3) return null;
+  Snd.built++;
+  const sr = Math.min(Snd.ctx.sampleRate, 44100), N = Math.max(2, Math.round(sr / freq - 0.5));   // played back resampled
+  const len = Math.max(N * 4, Math.floor(sr * ring));
+  buf = Snd.ctx.createBuffer(1, len, sr);
+  const out = buf.getChannelData(0), line = new Float32Array(N);
+  let prev = 0, peak = 0;
+  for (let i = 0; i < N; i++) { prev = prev * 0.45 + (Math.random() * 2 - 1) * 0.55; line[i] = prev; peak = Math.max(peak, Math.abs(prev)); }
+  for (let i = 0; i < N; i++) line[i] /= peak || 1;
+  const loss = Math.pow(0.001, N / (sr * ring));           // -60 dB after `ring` seconds
+  for (let i = 0, idx = 0; i < len; i++) {
+    const nx = idx + 1 === N ? 0 : idx + 1, cur = line[idx];
+    out[i] = cur;
+    line[idx] = 0.5 * (cur + line[nx]) * loss;
+    idx = nx;
+  }
+  const fade = Math.min(len, Math.floor(sr * 0.02));        // no click at the end
+  for (let i = 0; i < fade; i++) out[len - 1 - i] *= i / fade;
+  if (Snd.cache.size > 120) Snd.cache.clear();
+  Snd.cache.set(key, buf);
+  return buf;
+}
+const sndLast = [];                                          // when each line last sounded
+function sndPluck(c, vel) {
+  if (S.sound !== "On" || Snd.broken || !Snd.ctx || Snd.ctx.state !== "running") return;
+  const k = lineK[c];
+  if (k < 0 || Snd.voices >= 24) return;
+  const ctx = Snd.ctx, t = ctx.currentTime;
+  if (sndLast[c] !== undefined && t - sndLast[c] < 0.07) return;      // a line can't re-sound within 70 ms
+  sndLast[c] = t;
+  const freq = lineFreq(k, lineN), ring = S.sndRing;
+  Snd.master.gain.setTargetAtTime(S.sndVolume, t, 0.01);
+
+  const gain = ctx.createGain();
+  let src;
+  let stopAt = 0;
+  const pb = S.sndTone === "Pluck" ? pluckBuffer(freq, ring) : null;
+  if (pb) {
+    src = ctx.createBufferSource();
+    src.buffer = pb;
+    gain.gain.value = 0.7 * vel;
+  } else {                                           // sine / triangle tones, or a stand-in while a plucked sound isn't built yet
+    src = ctx.createOscillator();
+    src.type = S.sndTone === "Sine" ? "sine" : "triangle";
+    src.frequency.value = freq;
+    const len = S.sndTone === "Pluck" ? Math.min(ring, 0.8) : ring;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.5 * vel, t + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    stopAt = t + len + 0.05;                         // the tone must be started before it can be told when to stop
+  }
+  src.connect(gain);
+  let tail = gain;
+  if (ctx.createStereoPanner) {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-0.8, Math.min(0.8, (ropes[c][0].x / W) * 2 - 1));
+    gain.connect(pan); tail = pan;
+  }
+  tail.connect(Snd.master);
+  Snd.voices++;
+  src.onended = () => { Snd.voices--; try { src.disconnect(); gain.disconnect(); if (tail !== gain) tail.disconnect(); } catch (e) {} };
+  src.start(t);
+  if (stopAt) src.stop(stopAt);
+  sndErrors = 0;
+  if (sndLastErr) { sndLastErr = ""; sndStatus(); }
+}
+/* Grabbing: press on a line and it is picked up by the letter nearest the pointer. That letter then follows the
+   pointer (kept within the rope's reach, so the rope pulls taut instead of stretching) until you let go.
+   The other lines are independent, so the grabbed one passes straight through them; it plucks each one it crosses. */
+let grab = null;                                             // { c: line, i: letter on the line, dx, dy: where on the letter you took hold }
+let touchNow = [], touchLast = [], frameNo = 0;               // per line: touched this frame / the last frame it was touched
+
+/* ROPE mode. Each line is a verlet rope. A frame is split into N small sub-steps (N = Tautness): one tiny integrate
+   + one pass over the links each. Small steps keep the rope nearly inextensible and let it swing like a
+   real pendulum, without adding the damping that a hard length-correction would. */
+let dSv = [], gSv = [];
+function stepRope() {
+  const L = S.cellY;
+  const N = Math.max(1, Math.round(S.stiffness));
+  const rp = ropeParams(), cursor = mouse.x > -900;
+  if (touchNow.length !== cols) { touchNow = new Uint8Array(cols); touchLast = new Array(cols).fill(-999); }
+  touchNow.fill(0); frameNo++; Snd.built = 0;
+  const t = Math.min(1, loadT++ / 90), ramp = t * t * (3 - 2 * t);   // smoothstep 0 -> 1 over ~1.5s
+
+  // The cursor is a finger: a solid circle. It slides from where it was last frame to where it is now,
+  // and every sub-step the ropes are pushed out of it. Nothing acts at a distance: a line only moves when
+  // touched, is carried along while you push it, stays bent around the finger if you hold still, and swings
+  // back under gravity once you move away. The finger is never thinner than the letter spacing, so a
+  // rope can't slip between two of its letters.
+  const fx0 = mouse.px > -900 ? mouse.px : mouse.x, fy0 = mouse.px > -900 ? mouse.py : mouse.y;
+  const fx1 = mouse.x, fy1 = mouse.y;
+  mouse.px = mouse.x; mouse.py = mouse.y;
+  const FR = Math.max(S.radius, L * 0.6), FR2 = FR * FR;
+  if (grab && (!cursor || !ropes[grab.c])) grab = null;      // the pointer left the window: let go
+  const holding = !!grab;
+  // put the grabbed letter where the pointer is (u = how far through this frame's movement we are)
+  const hold = u => {
+    const rope = ropes[grab.c], pin = rope[0], q = rope[grab.i];
+    let tx = fx0 + (fx1 - fx0) * u + grab.dx, ty = fy0 + (fy1 - fy0) * u + grab.dy;
+    const ddx = tx - pin.x, ddy = ty - pin.y, dd = Math.sqrt(ddx * ddx + ddy * ddy), reach = grab.i * L * 0.995;
+    if (dd > reach) { tx = pin.x + ddx / dd * reach; ty = pin.y + ddy / dd * reach; }   // can't be pulled further than the rope is long
+    q.x = tx; q.y = ty;
+  };
+  const VMAX = MAX_SPEED / N, VMAX2 = VMAX * VMAX;
+  // A finger can only push a line so far: past this sideways distance from its resting place the line
+  // slips off the fingertip and swings back. That keeps lines spread out instead of herding hundreds of
+  // them into one pile. (Never less than the finger's own size, so a still finger can still part lines.)
+  const LIM = Math.max(S.pushLimit, FR * 1.3);
+
+  for (let c = 0; c < cols; c++) {
+    dSv[c] = Math.pow(rp[c].damp, 1 / N);                    // per-sub-step damping
+    gSv[c] = S.gravity * rp[c].g * ramp / (N * N);           // per-sub-step gravity displacement
+  }
+
+  for (let s = 0; s < N; s++) {
+    const odd = s & 1;
+
+    // 1) integrate every rope (the top letter stays pinned)
+    for (let c = 0; c < cols; c++) {
+      const rope = ropes[c], n = rope.length, dS = dSv[c], gS = gSv[c];
+      for (let i = 1; i < n; i++) {
+        const p = rope[i];
+        let vx = (p.x - p.px) * dS, vy = (p.y - p.py) * dS + gS;
+        const v2 = vx * vx + vy * vy;
+        if (v2 > VMAX2) { const k = VMAX / Math.sqrt(v2); vx *= k; vy *= k; }   // speed limit (see MAX_SPEED)
+        p.px = p.x; p.py = p.y; p.x += vx; p.y += vy;
+      }
+    }
+    if (holding) hold((s + 1) / N);
+
+    // 2) the finger pushes letters out of its circle. This happens BEFORE the links are solved, so the rope
+    //    always has the last word: it can never be stretched or torn, however the finger moves. (The finger is
+    //    invisible, so a letter ending up a hair inside it doesn't matter.)
+    if (cursor && !holding) {                       // (the finger is busy holding a line, so it pushes nothing)
+      const u = (s + 1) / N, cx = fx0 + (fx1 - fx0) * u, cy = fy0 + (fy1 - fy0) * u;
+      for (let c = 0; c < cols; c++) {
+        const rope = ropes[c], pin = rope[0];
+        const pinD = Math.sqrt((pin.x - cx) * (pin.x - cx) + (pin.y - cy) * (pin.y - cy));
+        for (let i = 1; i < rope.length; i++) {
+          const p = rope[i], dx = p.x - cx, dy = p.y - cy, d2 = dx * dx + dy * dy;
+          if (d2 >= FR2) continue;
+          if (Math.abs(p.x - pin.x) > LIM) continue;           // pushed as far as it goes: it slips past the finger
+          // right on top of the pinned end there is no room to push a letter out of the way: slide over it
+          if (pinD + i * L < FR + 0.5 * L) continue;
+          touchNow[c] = 1;
+          if (d2 < 1e-6) { p.x = cx + FR; continue; }
+          const k = FR / Math.sqrt(d2);
+          let nx = cx + dx * k, ny = cy + dy * k;
+          // never move a letter more than half a link in one sub-step
+          const mx = nx - p.x, my = ny - p.y, md2 = mx * mx + my * my, MAXM = L * 0.5;
+          if (md2 > MAXM * MAXM) { const sc = MAXM / Math.sqrt(md2); nx = p.x + mx * sc; ny = p.y + my * sc; }
+          p.x = nx; p.y = ny;
+        }
+      }
+    }
+
+    // 3) links: sweep up on odd sub-steps, down on even ones
+    for (let c = 0; c < cols; c++) {
+      const rope = ropes[c], n = rope.length;
+      if (odd) {
+        for (let i = n - 2; i >= 0; i--) {
+          const a = rope[i], b = rope[i + 1], dx = b.x - a.x, dy = b.y - a.y;
+          const d = Math.sqrt(dx * dx + dy * dy) || 0.0001, k = (d - L) / d * (i === 0 ? 1 : 0.5);
+          if (i) { a.x += dx * k; a.y += dy * k; }
+          b.x -= dx * k; b.y -= dy * k;
+        }
+      } else {
+        for (let i = 0; i < n - 1; i++) {
+          const a = rope[i], b = rope[i + 1], dx = b.x - a.x, dy = b.y - a.y;
+          const d = Math.sqrt(dx * dx + dy * dy) || 0.0001, k = (d - L) / d * (i === 0 ? 1 : 0.5);
+          if (i) { a.x += dx * k; a.y += dy * k; }
+          b.x -= dx * k; b.y -= dy * k;
+        }
+      }
+    }
+    if (holding) hold((s + 1) / N);                 // the grabbed letter stays exactly where the pointer put it
+
+  }
+
+  // a grabbed line that is dragged through other lines plucks each of them (they are not pushed, only touched)
+  if (holding) {
+    for (let c = 0; c < cols; c++) {
+      if (c === grab.c || lineK[c] < 0) continue;
+      const rope = ropes[c];
+      for (let i = 1; i < rope.length; i++) {
+        const gx = rope[i].x - (fx1 + grab.dx), gy = rope[i].y - (fy1 + grab.dy);
+        if (gx * gx + gy * gy < FR2) { touchNow[c] = 1; break; }
+      }
+    }
+  }
+
+  // damp stretch/compress motion along each link: removes the vertical bounce, leaves the swing alone
+  for (let c = 0; c < cols; c++) {
+    const rope = ropes[c];
+    for (let i = 0; i < rope.length - 1; i++) {
+      const a = rope[i], b = rope[i + 1];
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+      const ux = dx / d, uy = dy / d;
+      const rv = ((b.x - b.px) - (a.x - a.px)) * ux + ((b.y - b.py) - (a.y - a.py)) * uy;   // closing speed
+      const m = rv * LINK_DAMP, ha = i ? 0.5 : 0, hb = i ? 0.5 : 1;                         // the pinned top takes none
+      a.px -= ha * m * ux; a.py -= ha * m * uy;
+      b.px += hb * m * ux; b.py += hb * m * uy;
+    }
+  }
+
+  // sound: a line the finger has just touched is plucked. A line that has been held for a while is not plucked
+  // again, so resting the finger on it stays quiet; it has to be let go of (about a third of a second) first.
+  if (S.sound === "On") {
+    const speed = Math.sqrt((fx1 - fx0) * (fx1 - fx0) + (fy1 - fy0) * (fy1 - fy0));       // finger speed, px per frame
+    for (let c = 0; c < cols; c++) {
+      if (!touchNow[c]) continue;
+      if (lineK[c] >= 0 && frameNo - touchLast[c] > 20) { try { sndPluck(c, Math.min(1, 0.25 + speed / 14)); } catch (e) { sndFail(e); } }   // empty lines are invisible, so silent
+      touchLast[c] = frameNo;
+    }
+  }
+}
+
+/* FABRIC mode: the first version. Letters are linked to all their neighbours, a gentle spring pulls every
+   letter back toward where it started, and the cursor shoves the cloth away from a distance and drags it
+   along with its own motion. */
+function stepFabric() {
+  const mvx = mouse.x - mouse.px, mvy = mouse.y - mouse.py;
+  mouse.px = mouse.x; mouse.py = mouse.y;
+  const R = S.fRadius, R2 = R * R;
+
+  for (const p of pts) {
+    if (p.pin) continue;
+    let vx = (p.x - p.px) * S.fSwing;
+    let vy = (p.y - p.py) * S.fSwing;
+
+    const dx = p.x - mouse.x, dy = p.y - mouse.y, d2 = dx * dx + dy * dy;
+    if (d2 < R2) {
+      const d = Math.sqrt(d2) || 1, f = 1 - d / R;
+      vx += (dx / d) * f * S.fPush + mvx * f * S.fDrag;
+      vy += (dy / d) * f * S.fPush * 0.4 + mvy * f * S.fDrag;
+    }
+
+    vx += (p.ox - p.x) * S.fPullBack;
+    vy += S.fGravity * 0.05 + (p.oy - p.y) * S.fPullBack;
+
+    p.px = p.x; p.py = p.y;
+    p.x += vx; p.y += vy;
+  }
+
+  for (let i = 0; i < S.fStiffness; i++) {
+    for (const [a, b, rest] of cons) {
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+      const diff = (d - rest) / d * 0.5;
+      const ox = dx * diff, oy = dy * diff;
+      if (!a.pin) { a.x += ox; a.y += oy; }
+      if (!b.pin) { b.x -= ox; b.y -= oy; }
+    }
+  }
+}
+
+function step() { if (S.mode === "Fabric") { grab = null; stepFabric(); } else stepRope(); }
+
+const BOLD = 1, ITALIC = 2, UNDERLINE = 4, STRIKE = 8;
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = S.ink;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const face = `${S.fontSize}px "${S.font}", monospace`;
+  const regular = `${S.fontWeight} ${face}`, bold = `${Math.min(900, Math.max(700, S.fontWeight + 300))} ${face}`;
+  let cur = "";
+  for (const p of pts) {
+    if (p.ch === " ") continue;
+    const f = (p.m & ITALIC ? "italic " : "") + (p.m & BOLD ? bold : regular);
+    if (f !== cur) { ctx.font = f; cur = f; }
+    ctx.fillText(p.ch, p.x, p.y);
+  }
+  if (!hasMarks) return;
+
+  // The text is vertical, so a line runs DOWN the column: strikethrough through the middle of the letters,
+  // underline along their right-hand side. Each marked letter draws the stretch from half-way to the letter
+  // above to half-way to the letter below, so a styled run joins up into one line that follows the rope.
+  ctx.strokeStyle = S.ink;
+  ctx.lineWidth = Math.max(1, S.fontSize / 14);
+  ctx.lineCap = "butt";
+  const side = S.fontSize * 0.6 + 1;
+  ctx.beginPath();
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      const p = pts[r * cols + c];
+      if (!(p.m & (UNDERLINE | STRIKE)) || p.ch === " ") continue;
+      const up = r > 0 ? pts[(r - 1) * cols + c] : null, dn = r < rows - 1 ? pts[(r + 1) * cols + c] : null;
+      const ax = up ? (up.x + p.x) / 2 : p.x, ay = up ? (up.y + p.y) / 2 : p.y - S.cellY / 2;
+      const bx = dn ? (dn.x + p.x) / 2 : p.x, by = dn ? (dn.y + p.y) / 2 : p.y + S.cellY / 2;
+      const dx = bx - ax, dy = by - ay, d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const nx = dy / d, ny = -dx / d;                       // points to the right of a downward line
+      if (p.m & STRIKE) { ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }
+      if (p.m & UNDERLINE) { ctx.moveTo(ax + nx * side, ay + ny * side); ctx.lineTo(bx + nx * side, by + ny * side); }
+    }
+  }
+  ctx.stroke();
+}
+
+let loopErr = 0;
+function loop() {
+  // the next frame is always scheduled, even if this one throws, so one error can never freeze the curtain
+  try { step(); draw(); }
+  catch (e) { if (loopErr++ < 3) console.error("curtain frame error:", e); }
+  requestAnimationFrame(loop);
+}
+
+/* =====================  Input  ===================== */
+const offscreen = () => { mouse.x = mouse.y = mouse.px = mouse.py = -999; };
+function setMouse(x, y) {
+  const b = cvs.getBoundingClientRect();
+  mouse.x = x - b.left; mouse.y = y - b.top;
+  if (mouse.px < -900) { mouse.px = mouse.x; mouse.py = mouse.y; } // no jolt when entering
+}
+const panel = document.getElementById("panel");
+/* the line whose letter is nearest (px, within `maxD`) to the pointer, or null. Only lines that show letters count. */
+function nearestLine(mx, my, maxD) {
+  let best = null, bd = maxD * maxD;
+  for (let c = 0; c < cols; c++) {
+    if (lineK[c] < 0) continue;
+    const rope = ropes[c];
+    for (let i = 1; i < rope.length; i++) {
+      const dx = rope[i].x - mx, dy = rope[i].y - my, d2 = dx * dx + dy * dy;
+      if (d2 < bd) { bd = d2; best = { c, i }; }
+    }
+  }
+  return best;
+}
+const grabReach = () => Math.max(S.radius, S.cellY * 0.6) + 16;    // the finger holds a line off to its side, so look a little beyond it
+const canGrab = () => S.mode === "Rope" && S.grab === "On";
+function updateCursor(mx, my) {
+  if (grab) { cvs.style.cursor = "grabbing"; return; }
+  cvs.style.cursor = canGrab() && nearestLine(mx, my, grabReach()) ? "grab" : "";
+}
+// pointermove, not mousemove: while a line is grabbed the press was cancelled (so the page doesn't select text),
+// and browsers then stop sending mousemove for that drag, but pointermove keeps coming (mouse, pen and touch alike)
+addEventListener("pointermove", e => {
+  if (panel.contains(e.target) && !grab) { cvs.style.cursor = ""; return offscreen(); }
+  setMouse(e.clientX, e.clientY);
+  if (e.pointerType === "mouse") updateCursor(mouse.x, mouse.y);
+});
+cvs.addEventListener("pointerdown", e => {
+  if (e.button !== 0 || !canGrab()) return;
+  setMouse(e.clientX, e.clientY);
+  const hit = nearestLine(mouse.x, mouse.y, grabReach());
+  if (!hit) return;
+  e.preventDefault();
+  const q = ropes[hit.c][hit.i];
+  grab = { c: hit.c, i: hit.i, dx: q.x - mouse.x, dy: q.y - mouse.y };     // keep hold of it where you took it
+  try { cvs.setPointerCapture(e.pointerId); } catch (err) {}
+  cvs.style.cursor = "grabbing";
+  try { sndPluck(hit.c, 0.8); } catch (err) { sndFail(err); }
+});
+const letGo = () => { if (grab) { grab = null; cvs.style.cursor = ""; } };
+addEventListener("pointerup", letGo);
+addEventListener("pointercancel", letGo);
+addEventListener("blur", letGo);
+addEventListener("touchmove", e => { const t = e.touches[0]; setMouse(t.clientX, t.clientY); }, { passive: true });
+document.addEventListener("mouseleave", offscreen);
+addEventListener("resize", build);
+
+/* =====================  Panel  ===================== */
+const body = document.getElementById("panelBody");
+const controls = {};   // key -> { set(value) }
+const decimals = step => (String(step).split(".")[1] || "").length;
+
+/* ---- Undo / redo: snapshots of the settings. Rapid changes to the same field (a drag, typing)
+   collapse into one step. ---- */
+const hist = { stack: [], i: -1, lastKey: null, lastT: 0 };
+function updateHistButtons() {
+  document.getElementById("undoBtn").disabled = hist.i <= 0;
+  document.getElementById("redoBtn").disabled = hist.i >= hist.stack.length - 1;
+}
+function record(key, force) {
+  const now = Date.now(), snap = JSON.stringify(S);
+  if (hist.i >= 0 && hist.stack[hist.i] === snap) return;                       // nothing actually changed
+  if (!force && hist.i > 0 && key === hist.lastKey && now - hist.lastT < 600) {
+    hist.stack[hist.i] = snap;                                                  // same gesture: update the current step
+  } else {
+    hist.stack.length = hist.i + 1;                                             // a new change drops the redo branch
+    hist.stack.push(snap); hist.i++;
+    if (hist.stack.length > 100) { hist.stack.shift(); hist.i--; }
+  }
+  hist.lastKey = key; hist.lastT = now;
+  updateHistButtons();
+}
+function goHist(d) {
+  const j = hist.i + d;
+  if (j < 0 || j >= hist.stack.length) return;
+  const prev = S;
+  hist.i = j; hist.lastKey = null;
+  S = { ...DEFAULTS, ...JSON.parse(hist.stack[j]) };
+  syncControls(); save();
+  // only rebuild the cloth when the grid changed, so undoing a colour doesn't reset the swing
+  if (prev.textWidth !== S.textWidth || prev.maxHeight !== S.maxHeight || prev.cellX !== S.cellX || prev.cellY !== S.cellY) build();
+  else assignChars();
+  updateHistButtons();
+}
+for (const [id, d] of [["undoBtn", -1], ["redoBtn", 1]]) {
+  document.getElementById(id).addEventListener("click", e => { e.stopPropagation(); goHist(d); });
+}
+addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k !== "z" && k !== "y") return;
+  const t = document.activeElement, tag = t && t.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT" || (tag === "INPUT" && t.type === "text")) return;   // keep native text undo while typing
+  e.preventDefault();
+  goHist(k === "y" || e.shiftKey ? 1 : -1);
+});
+
+/* Show only the controls (and sections) that belong to the current mode. */
+function applyMode() {
+  for (const el of body.querySelectorAll("[data-modes]")) {
+    el.style.display = el.dataset.modes.split(",").includes(S.mode) ? "" : "none";
+  }
+}
+
+function applyEffect(key, effect) {
+  if (key === "mode") applyMode();
+  if (key === "sound") { if (S.sound === "On") sndUnlock(); sndStatus(); }
+  if (key === "sound" || key === "text" || /^snd(Scale|Root|Octave|Range|Tone|Ring)$/.test(key)) sndWarm();
+  if (key === "sndVolume" && Snd.master) Snd.master.gain.setTargetAtTime(S.sndVolume, Snd.ctx.currentTime, 0.01);
+  if (key === "bg") document.body.style.background = S.bg;
+  if (effect === "rebuild") build();
+  else if (effect === "chars") assignChars();
+  save();
+  record(key);
+}
+
+/* ---- per-letter styling (bold / italic / underline / strikethrough) ----
+   S.marks is a string with one hex digit per character of S.text. When the text is edited the marks are spliced
+   the same way, so a styled letter stays styled when you type before it, and new letters take on the style of
+   the letter before them (like a word processor). */
+function normMarks(m, n) { m = m || ""; return m.length >= n ? m.slice(0, n) : m + "0".repeat(n - m.length); }
+function syncMarks(oldT, newT, marks) {
+  const m = normMarks(marks, oldT.length);
+  let pre = 0; const maxPre = Math.min(oldT.length, newT.length);
+  while (pre < maxPre && oldT[pre] === newT[pre]) pre++;
+  let suf = 0; const maxSuf = Math.min(oldT.length, newT.length) - pre;
+  while (suf < maxSuf && oldT[oldT.length - 1 - suf] === newT[newT.length - 1 - suf]) suf++;
+  const inserted = Math.max(0, newT.length - pre - suf), fill = pre > 0 ? m[pre - 1] : "0";
+  return m.slice(0, pre) + fill.repeat(inserted) + m.slice(oldT.length - suf);
+}
+/* Turn `bit` on for the selected letters, or off if they all already have it. Returns the new marks string. */
+function toggleMarks(marks, textLen, a, b, bit) {
+  const m = normMarks(marks, textLen).split("");
+  let all = b > a;
+  for (let i = a; i < b; i++) if (!(parseInt(m[i], 16) & bit)) { all = false; break; }
+  for (let i = a; i < b; i++) { const v = parseInt(m[i], 16); m[i] = (all ? v & ~bit : v | bit).toString(16); }
+  return m.join("");
+}
+/* ---- A small rich-text box for the Words field. It shows the letters styled (bold / italic / underline /
+   strikethrough) as you edit. The text and the styling still live in S.text and S.marks; the box is just a
+   view of them: after every edit it is rebuilt from S, and the caret is put back where it was. ---- */
+function selOffsets(root) {
+  const sel = getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  if (!root.contains(r.startContainer) || !root.contains(r.endContainer)) return null;
+  const pre = document.createRange();
+  pre.selectNodeContents(root); pre.setEnd(r.startContainer, r.startOffset);
+  const start = pre.toString().length;
+  pre.setEnd(r.endContainer, r.endOffset);
+  return { start, end: pre.toString().length };
+}
+function setOffsets(root, start, end) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n, pos = 0, sNode = null, sOff = 0, eNode = null, eOff = 0;
+  while ((n = walker.nextNode())) {
+    const len = n.nodeValue.length;
+    if (!sNode && start <= pos + len) { sNode = n; sOff = start - pos; }
+    if (!eNode && end <= pos + len) { eNode = n; eOff = end - pos; break; }
+    pos += len;
+  }
+  const range = document.createRange();
+  if (sNode && eNode) { range.setStart(sNode, sOff); range.setEnd(eNode, eOff); }
+  else { range.selectNodeContents(root); range.collapse(false); }      // empty box, or past the end
+  const sel = getSelection();
+  sel.removeAllRanges(); sel.addRange(range);
+}
+function makeEditor(maxLength, placeholder) {
+  const ed = document.createElement("div");
+  ed.className = "ed minibar";
+  ed.setAttribute("role", "textbox"); ed.setAttribute("aria-multiline", "true");
+  ed.dataset.placeholder = placeholder; ed.spellcheck = false;
+  try { ed.contentEditable = "plaintext-only"; } catch (e) {}
+  if (ed.contentEditable !== "plaintext-only") ed.contentEditable = "true";
+  ed.maxLength = maxLength;
+  ed._sel = { start: 0, end: 0 }; ed._composing = false;
+
+  // the text, sanitised: one line, and no longer than the limit
+  Object.defineProperty(ed, "value", {
+    get: () => ed.textContent.replace(/[\r\n]/g, " ").slice(0, maxLength),
+    set: () => ed.render()                                       // the model (S) already holds the new text
+  });
+  Object.defineProperty(ed, "selectionStart", { get: () => (selOffsets(ed) || ed._sel).start });
+  Object.defineProperty(ed, "selectionEnd", { get: () => (selOffsets(ed) || ed._sel).end });
+  ed.setSelectionRange = (a, b) => { setOffsets(ed, a, b); ed._sel = { start: a, end: b }; };
+
+  // rebuild the styled spans from S.text / S.marks, keeping the caret and selection
+  ed.render = () => {
+    if (ed._composing) return;
+    const had = document.activeElement === ed ? selOffsets(ed) : null;
+    const text = S.text.replace(/[\r\n]/g, " "), marks = normMarks(S.marks, text.length);
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < text.length;) {
+      let j = i + 1;
+      while (j < text.length && marks[j] === marks[i]) j++;
+      const m = parseInt(marks[i], 16) || 0, chunk = text.slice(i, j);
+      if (!m) frag.appendChild(document.createTextNode(chunk));
+      else {
+        const sp = document.createElement("span");
+        sp.textContent = chunk;
+        if (m & 1) sp.style.fontWeight = "700";
+        if (m & 2) sp.style.fontStyle = "italic";
+        const deco = [m & 4 ? "underline" : "", m & 8 ? "line-through" : ""].filter(Boolean).join(" ");
+        if (deco) sp.style.textDecoration = deco;
+        frag.appendChild(sp);
+      }
+      i = j;
+    }
+    ed.replaceChildren(frag);
+    if (had) { const n = text.length; setOffsets(ed, Math.min(had.start, n), Math.min(had.end, n)); }
+  };
+
+  document.addEventListener("selectionchange", () => { const o = selOffsets(ed); if (o) ed._sel = o; });
+  ed.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });          // one line only
+  ed.addEventListener("paste", e => {                                                           // paste as plain text
+    e.preventDefault();
+    const t = (e.clipboardData || window.clipboardData).getData("text/plain").replace(/[\r\n]+/g, " ");
+    document.execCommand("insertText", false, t);
+  });
+  ed.addEventListener("compositionstart", () => { ed._composing = true; });
+  ed.addEventListener("compositionend", () => { ed._composing = false; ed.dispatchEvent(new Event("input", { bubbles: true })); });
+  return ed;
+}
+
+const FORMATS = [
+  { bit: 1, key: "b", label: "B", name: "Bold", keys: "Ctrl+B", cls: "f-b" },
+  { bit: 2, key: "i", label: "I", name: "Italic", keys: "Ctrl+I", cls: "f-i" },
+  { bit: 4, key: "u", label: "U", name: "Underline", keys: "Ctrl+U", cls: "f-u" },
+  { bit: 8, key: "x", label: "S", name: "Strikethrough", keys: "Ctrl+Shift+X", cls: "f-s" }
+];
+function makeFormatBar(ta) {
+  const bar = document.createElement("div");
+  bar.className = "fmt"; bar.setAttribute("role", "toolbar"); bar.setAttribute("aria-label", "Format the selected letters");
+  const buttons = FORMATS.map(f => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "fmt-btn " + f.cls; b.textContent = f.label;
+    b.title = `${f.name} (${f.keys}): select some letters first`; b.setAttribute("aria-label", f.name); b.setAttribute("aria-pressed", "false");
+    // keep the textarea's focus and selection when the button is pressed
+    b.addEventListener("mousedown", e => e.preventDefault());
+    b.addEventListener("click", () => apply(f.bit));
+    bar.appendChild(b);
+    return b;
+  });
+  function refresh() {
+    const a = ta.selectionStart, b = ta.selectionEnd, has = b > a;
+    const m = normMarks(S.marks, S.text.length);
+    FORMATS.forEach((f, k) => {
+      let all = has;
+      for (let i = a; has && i < b; i++) if (!(parseInt(m[i], 16) & f.bit)) { all = false; break; }
+      buttons[k].disabled = !has;
+      buttons[k].setAttribute("aria-pressed", String(all));
+      buttons[k].classList.toggle("on", all);
+    });
+  }
+  function apply(bit) {
+    const a = ta.selectionStart, b = ta.selectionEnd;
+    if (b <= a) return;
+    S.marks = toggleMarks(S.marks, S.text.length, a, b, bit);
+    applyEffect("marks", "chars");
+    ta.render();                                   // show the styling in the box itself
+    ta.setSelectionRange(a, b);                    // and keep the same letters selected
+    refresh();
+  }
+  ["select", "keyup", "mouseup", "focus", "input"].forEach(ev => ta.addEventListener(ev, refresh));
+  document.addEventListener("selectionchange", () => { if (document.activeElement === ta) refresh(); });
+  ta.addEventListener("keydown", e => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    const f = FORMATS.find(x => x.key === k && (k === "x" ? e.shiftKey : !e.shiftKey));
+    if (f) { e.preventDefault(); apply(f.bit); }
+  });
+  return { bar, refresh };
+}
+
+function makeReset() {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "reset"; b.title = "Reset to default"; b.setAttribute("aria-label", "Reset to default");
+  b.innerHTML = '<svg viewBox="0 0 10 10" fill="none" stroke="#8E8E95" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M2.49631 7.78998C3.1807 8.40453 4.06709 8.74611 4.9869 8.74975C5.90671 8.75339 6.79578 8.41885 7.48502 7.80974C8.17426 7.20063 8.6156 6.35945 8.72509 5.44618C8.83458 4.5329 8.6046 3.61123 8.07888 2.85646C7.55316 2.10169 6.76837 1.56646 5.87376 1.35257C4.97916 1.13868 4.03715 1.26105 3.22688 1.6964C2.41661 2.13175 1.79461 2.84971 1.47917 3.71375"/>' +
+    '<path d="M1.25 1.66709V3.75042H3.33333"/></svg>';
+  return b;
+}
+
+/* Pure number helpers for a range field (no DOM, so they can be tested on their own). */
+function scrubMath(f) {
+  const dec = decimals(f.step);
+  const clamp = v => Math.min(f.max, Math.max(f.min, v));
+  const round = v => Number(v.toFixed(dec));
+  return {
+    dec, clamp, round,
+    snap: v => round(clamp(f.min + Math.round((v - f.min) / f.step) * f.step)),
+    // The 9 dots are detents: 8 equal intervals from min to max. Within `px` of a dot the value
+    // sticks to it (magnetic); anywhere else it stays free, so fine values are still reachable.
+    detent: (v, trackPx, px) => {
+      if (v < f.min || v > f.max) return v;
+      const t = (v - f.min) / (f.max - f.min) * 8, k = Math.round(t);
+      return Math.abs(t - k) / 8 * trackPx <= px ? f.min + k / 8 * (f.max - f.min) : v;
+    },
+    pct: v => (clamp(v) - f.min) / (f.max - f.min),            // 0..1 along the pill
+    format: v => String(Number(v.toFixed(dec))),               // "12", "9.5", "0.0009" (no trailing zeros)
+    parse: s => {                                              // "12px", " 0,5 ", "50%" -> number or NaN
+      const m = String(s).replace(",", ".").match(/-?\d*\.?\d+(e-?\d+)?/i);
+      return m ? parseFloat(m[0]) : NaN;
+    }
+  };
+}
+
+function makeScrub(f) {
+  const wrap = document.createElement("div");
+  wrap.className = "num";
+  const track = document.createElement("span");
+  track.className = "track";
+  const dots = '<i></i>'.repeat(9);                // 9 dots, like the Figma track
+  track.innerHTML = `<span class="dots">${dots}</span><span class="fill"><span class="dots">${dots}</span></span><span class="handle"></span>`;
+  const lbl = document.createElement("span");   // span, not <label>: a label click would steal focus after a drag
+  lbl.className = "lbl"; lbl.textContent = f.label;
+  const val = document.createElement("span");
+  val.className = "val";
+  const input = document.createElement("input");
+  input.id = "f_" + f.key; input.type = "text"; input.inputMode = "decimal"; input.size = 1;
+  input.autocomplete = "off"; input.spellcheck = false; input.setAttribute("aria-label", f.label);
+  val.appendChild(input);
+  const unit = document.createElement("span");
+  unit.className = "unit"; unit.textContent = f.unit || "";
+  const rst = makeReset();
+  wrap.append(track, lbl, val, unit, rst);
+
+  const M = scrubMath(f);
+  const PAD = 12;                               // the track runs between the pill's 12px paddings
+  const SNAP_PX = 6;                            // how close (px) the handle must be to a dot to snap to it
+  let curP = PAD;                               // handle centre, px from the pill's inner left edge
+  const setPos = v => {                         // fill + handle follow the value (or the raw drag position)
+    const w = wrap.clientWidth || 200;
+    curP = PAD + M.pct(v) * (w - 2 * PAD);
+    wrap.style.setProperty("--p", curP.toFixed(1) + "px");
+    wrap.style.setProperty("--pw", (w - 2 * PAD) + "px");
+  };
+  const show = s => { input.value = s; val.dataset.v = s; };
+  const render = () => {
+    show(M.format(S[f.key]));
+    rst.style.visibility = S[f.key] === DEFAULTS[f.key] ? "hidden" : "visible";
+    if (!dragging) setPos(S[f.key]);
+  };
+  let raf = 0;
+  const commit = v => {
+    if (v === S[f.key]) return;
+    S[f.key] = v; render();
+    if (f.effect === "rebuild") {          // coalesce expensive rebuilds while dragging
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; applyEffect(f.key, f.effect); });
+    } else applyEffect(f.key, f.effect);
+  };
+
+  /* Drag sideways to scrub; a click without movement switches to typing.
+     The drag is relative but geared to the pill's width, so a handle you grab stays under the
+     pointer (like the reference); the raw position is kept unclamped so overshooting and coming
+     back feels like a real slider. Shift = 10x finer. No pointer lock: the reference keeps the
+     cursor visible and riding on the handle. */
+  let dragging = false, moved = false, downX = 0, lastX = 0, raw = 0, pid = null;
+  wrap.addEventListener("pointerdown", e => {
+    if (e.button !== 0 || e.target.closest(".reset") || wrap.classList.contains("editing")) return;
+    e.preventDefault();                       // no text selection / focus yet
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    dragging = true; moved = false; downX = lastX = e.clientX; raw = S[f.key]; pid = e.pointerId;
+    try { wrap.setPointerCapture(pid); } catch (err) {}
+  });
+  wrap.addEventListener("pointermove", e => {
+    if (!dragging) {                          // hovering: light up the handle when the pointer is on it
+      if (e.pointerType === "mouse" && !wrap.classList.contains("editing")) {
+        const hx = wrap.getBoundingClientRect().left + 1 + curP;
+        wrap.classList.toggle("grab", Math.abs(e.clientX - hx) <= 8);
+      }
+      return;
+    }
+    if (e.pointerId !== pid) return;
+    if (!moved) {
+      if (Math.abs(e.clientX - downX) < 3) return;
+      moved = true; wrap.classList.add("dragging"); document.documentElement.classList.add("scrubbing");
+    }
+    const unitsPerPx = (f.max - f.min) / Math.max(40, wrap.clientWidth - 2 * PAD);
+    raw += (e.clientX - lastX) * unitsPerPx * (e.shiftKey ? 0.1 : 1);
+    lastX = e.clientX;
+    raw = Math.min(f.max + (f.max - f.min), Math.max(f.min - (f.max - f.min), raw)); // bounded overshoot
+    // magnetic snap to the dots; hold Shift for free, fine control
+    const trackPx = Math.max(40, wrap.clientWidth - 2 * PAD);
+    const v = e.shiftKey ? raw : M.detent(raw, trackPx, SNAP_PX);
+    setPos(v);                                // handle sits exactly on the dot while snapped
+    commit(M.snap(v));
+  });
+  const end = e => {
+    if (!dragging || (e && e.pointerId !== pid)) return;
+    dragging = false;
+    wrap.classList.remove("dragging"); document.documentElement.classList.remove("scrubbing");
+    setPos(S[f.key]);
+    if (!moved && e && e.type === "pointerup") { input.focus(); input.select(); }
+  };
+  // belt and braces: stop mousedown from focusing the input when a scrub starts on the digits
+  wrap.addEventListener("mousedown", e => { if (!wrap.classList.contains("editing") && !e.target.closest(".reset")) e.preventDefault(); });
+  wrap.addEventListener("pointerup", end);
+  wrap.addEventListener("pointercancel", end);
+  wrap.addEventListener("lostpointercapture", end);
+
+  wrap.addEventListener("pointerleave", () => wrap.classList.remove("grab"));
+
+  // typing
+  input.addEventListener("focus", () => { wrap.classList.add("editing"); wrap.classList.remove("grab"); input.select(); });
+  input.addEventListener("input", () => { val.dataset.v = input.value; });
+  const apply = () => {
+    const v = M.parse(input.value);
+    if (!isNaN(v)) commit(M.round(M.clamp(v)));
+    render();
+  };
+  input.addEventListener("blur", () => { wrap.classList.remove("editing"); apply(); });
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") { apply(); input.blur(); }
+    else if (e.key === "Escape") { render(); input.blur(); }
+    else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      const dir = e.key === "ArrowUp" ? 1 : -1;
+      commit(M.snap(S[f.key] + dir * f.step * (e.shiftKey ? 10 : 1)));
+      input.select();
+    }
+  });
+  rst.addEventListener("click", () => commit(DEFAULTS[f.key]));
+
+  // keep the handle right when the pill changes width (panel shown again, mobile sheet, resize)
+  if (window.ResizeObserver) new ResizeObserver(() => { if (!dragging) setPos(S[f.key]); }).observe(wrap);
+
+  controls[f.key] = { set: render };
+  return wrap;
+}
+
+/* Custom dropdown that looks like the Figma component. It behaves like an input: it has a `value`
+   and fires an "input" event when the choice changes. `preview` shows each option in its own font. */
+const DD_CHEVRON = '<svg viewBox="0 0 7 4" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M0.5 0.5L3.5 3.5L6.5 0.5"/></svg>';
+const DD_CHECK = '<svg viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M1.2 6.51429L3.94286 9.25714L10.8 2.4" stroke="#2A2A2D" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function makeDropdown(options, preview) {
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.className = "dd";
+  btn.setAttribute("aria-haspopup", "listbox"); btn.setAttribute("aria-expanded", "false");
+  const text = document.createElement("span");
+  const chip = document.createElement("span");
+  chip.className = "dd-chip"; chip.innerHTML = DD_CHEVRON;
+  btn.append(text, chip);
+
+  let value = options[0], menu = null, act = -1;
+  Object.defineProperty(btn, "value", { get: () => value, set: v => { value = v; text.textContent = v; } });
+
+  const items = () => menu ? [...menu.children] : [];
+  const setAct = i => { act = i; items().forEach((el, k) => el.classList.toggle("act", k === i)); };
+  const choose = o => { if (o !== value) { btn.value = o; btn.dispatchEvent(new Event("input", { bubbles: true })); } close(); };
+
+  function onKey(e) {
+    if (!menu) return;
+    const n = options.length;
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); btn.focus(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setAct((act + 1) % n); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setAct((act - 1 + n) % n); }
+    else if (e.key === "Home") { e.preventDefault(); setAct(0); }
+    else if (e.key === "End") { e.preventDefault(); setAct(n - 1); }
+    else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(options[act]); btn.focus(); }
+    else if (e.key === "Tab") close();
+  }
+  const onDown = e => { if (menu && !menu.contains(e.target) && !btn.contains(e.target)) close(); };
+  const onScroll = e => { if (menu && !menu.contains(e.target)) close(); };
+
+  function open() {
+    if (menu) return;
+    const r = btn.getBoundingClientRect(), ITEM = 30, idx = Math.max(0, options.indexOf(value));
+    menu = document.createElement("div");
+    menu.className = "dd-menu"; menu.setAttribute("role", "listbox");
+    options.forEach((o, i) => {
+      const el = document.createElement("div");
+      el.className = "dd-item" + (i === idx ? " sel" : "");
+      el.setAttribute("role", "option"); el.setAttribute("aria-selected", String(i === idx));
+      const t = document.createElement("span");
+      t.textContent = o;
+      if (preview) t.style.fontFamily = `"${o}", system-ui, sans-serif`;
+      el.appendChild(t);
+      if (i === idx) el.insertAdjacentHTML("beforeend", DD_CHECK);
+      el.addEventListener("mouseenter", () => setAct(i));
+      el.addEventListener("click", () => choose(o));
+      menu.appendChild(el);
+    });
+    document.body.appendChild(menu);
+    // open OVER the pill: the selected item lines up with it (1px border + 4px padding above the first item)
+    const h = options.length * ITEM + 10;
+    let top = r.top + r.height / 2 - (5 + idx * ITEM + ITEM / 2);
+    top = Math.max(8, Math.min(innerHeight - h - 8, top));
+    menu.style.width = r.width + "px"; menu.style.left = r.left + "px"; menu.style.top = top + "px";
+    requestAnimationFrame(() => menu && menu.classList.add("show"));
+    btn.classList.add("open"); btn.setAttribute("aria-expanded", "true");
+    setAct(idx);
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("scroll", onScroll, true);
+    addEventListener("resize", close);
+  }
+  function close() {
+    if (!menu) return;
+    menu.remove(); menu = null; act = -1;
+    btn.classList.remove("open"); btn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("keydown", onKey, true);
+    document.removeEventListener("pointerdown", onDown, true);
+    document.removeEventListener("scroll", onScroll, true);
+    removeEventListener("resize", close);
+  }
+
+  btn.addEventListener("click", () => (menu ? close() : open()));
+  btn.addEventListener("keydown", e => {
+    if (!menu && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); open(); }
+  });
+  btn.value = value;
+  return btn;
+}
+
+function makeNote(f) {
+  const el = document.createElement("div");
+  el.className = "note"; el.id = f.id; el.textContent = f.text;
+  return el;
+}
+
+function makeField(f) {
+  if (f.type === "range") return makeScrub(f);
+  if (f.type === "note") return makeNote(f);
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const id = "f_" + f.key;
+  const out = document.createElement("output");
+  const rst = makeReset();
+  const inline = f.type === "select";
+  if (inline) {
+    // Figma "dropdown": the label sits to the LEFT of the pill, 8px apart, centred on it
+    wrap.classList.add("inline");
+    const lbl = document.createElement("label");
+    lbl.htmlFor = id; lbl.textContent = f.label;
+    wrap.appendChild(lbl);
+  } else {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<label for="${id}">${f.label}</label>`;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.append(rst, out);
+    row.appendChild(meta);
+    wrap.appendChild(row);
+  }
+
+  let input;
+  if (f.type === "textarea") {
+    input = makeEditor(2400, "Type your own words…");
+  } else if (f.type === "select") {
+    input = makeDropdown(f.options, f.preview);
+  }
+  input.id = id;
+  let fmt = null;
+  if (f.key === "text") fmt = makeFormatBar(input);
+  if (inline) {
+    const box = document.createElement("div");      // the reset chip sits inside the pill, left of the chevron chip
+    box.className = "dd-wrap";
+    rst.classList.add("dd-reset");
+    box.append(input, rst);
+    wrap.appendChild(box);
+  } else wrap.appendChild(input);
+  if (fmt) wrap.appendChild(fmt.bar);
+
+  const show = () => {
+    rst.style.visibility = S[f.key] === DEFAULTS[f.key] ? "hidden" : "visible";
+    if (f.type === "textarea") out.textContent = `${input.value.length} / ${input.maxLength}`;   // letters used / limit
+  };
+  input.addEventListener("input", () => {
+    if (f.key === "text") S.marks = syncMarks(S.text, input.value, S.marks);   // keep the styling attached to its letters
+    S[f.key] = input.value;
+    show(); applyEffect(f.key, f.effect);
+    if (input.render) input.render();              // rich box: redraw the styled letters, keep the caret
+  });
+  rst.addEventListener("click", () => {
+    S[f.key] = DEFAULTS[f.key];
+    if (f.key === "text") S.marks = DEFAULTS.marks;
+    input.value = S[f.key]; show(); applyEffect(f.key, f.effect);
+    if (fmt) fmt.refresh();
+  });
+  controls[f.key] = { set(v) { input.value = v; show(); if (fmt) fmt.refresh(); } };
+  return wrap;
+}
+
+function makeColors() {
+  const grid = document.createElement("div");
+  grid.className = "colors";
+  for (const [key, label] of [["ink", "Text"], ["bg", "Background"]]) {
+    const w = document.createElement("div");
+    w.className = "field";
+    w.innerHTML = `<div class="row"><label for="f_${key}">${label}</label></div>`;
+    const input = document.createElement("input");
+    input.type = "color"; input.id = "f_" + key;
+    const rst = makeReset();
+    w.querySelector(".row").appendChild(rst);
+    const upd = () => { rst.style.visibility = S[key].toLowerCase() === DEFAULTS[key] ? "hidden" : "visible"; };
+    input.addEventListener("input", () => { S[key] = input.value; upd(); applyEffect(key); });
+    rst.addEventListener("click", () => { S[key] = DEFAULTS[key]; input.value = S[key]; upd(); applyEffect(key); });
+    w.appendChild(input);
+    grid.appendChild(w);
+    controls[key] = { set(v) { input.value = v; upd(); } };
+  }
+  return grid;
+}
+
+/* Panel UI state (width + which categories are collapsed). Kept apart from the effect settings
+   so "Reset all" doesn't touch it. */
+const UI = { w: 300, closed: {} };
+try { Object.assign(UI, JSON.parse(localStorage.getItem("curtainPanelUI") || "{}")); } catch (e) {}
+const saveUI = () => { try { localStorage.setItem("curtainPanelUI", JSON.stringify(UI)); } catch (e) {} };
+
+/* Each category is a collapsible group: a clickable title with a chevron, then its fields. */
+const CHEVRON = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>';
+let grid = null;
+for (const f of FIELDS) {
+  if (f.section || !grid) {
+    const cat = document.createElement("section");
+    cat.className = "cat";
+    if (f.modes) cat.dataset.modes = f.modes.join(",");
+    const name = f.section || "Settings";
+    if (UI.closed[name]) cat.classList.add("closed");
+
+    const head = document.createElement("button");
+    head.type = "button"; head.className = "cat-head";
+    head.setAttribute("aria-expanded", String(!cat.classList.contains("closed")));
+    head.innerHTML = `<span>${name}</span>${CHEVRON}`;
+    head.addEventListener("click", () => {
+      const closed = cat.classList.toggle("closed");
+      head.setAttribute("aria-expanded", String(!closed));
+      UI.closed[name] = closed; saveUI();
+    });
+
+    const wrap = document.createElement("div");
+    wrap.className = "cat-body";
+    grid = document.createElement("div");
+    grid.className = "grid";
+    wrap.appendChild(grid);
+    cat.append(head, wrap);
+    body.appendChild(cat);
+    if (f.section) continue;
+  }
+  const el = f.type === "colors" ? makeColors() : makeField(f);
+  if (f.modes) el.dataset.modes = f.modes.join(",");
+  grid.appendChild(el);
+}
+
+/* Drag the panel's left edge to resize it horizontally. Double-click the edge to reset the width. */
+const MIN_W = 260, DEFAULT_W = 300;
+const maxW = () => Math.max(MIN_W, Math.min(640, innerWidth - 32));
+const setPanelW = w => {
+  UI.w = Math.round(Math.min(maxW(), Math.max(MIN_W, w)));
+  panel.style.setProperty("--panel-w", UI.w + "px");
+};
+const resizer = document.createElement("div");
+resizer.id = "resizer"; resizer.title = "Drag to resize, double-click to reset";
+resizer.setAttribute("role", "separator"); resizer.setAttribute("aria-orientation", "vertical");
+panel.appendChild(resizer);
+let rz = null;
+resizer.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  rz = { x: e.clientX, w: panel.getBoundingClientRect().width, id: e.pointerId };
+  resizer.setPointerCapture(e.pointerId);
+  panel.classList.add("resizing");
+  document.documentElement.classList.add("panel-resizing");
+});
+resizer.addEventListener("pointermove", e => {
+  if (!rz || e.pointerId !== rz.id) return;
+  setPanelW(rz.w + (rz.x - e.clientX));        // the panel hangs off the right edge, so dragging left widens it
+});
+const endResize = e => {
+  if (!rz || (e && e.pointerId !== rz.id)) return;
+  rz = null;
+  panel.classList.remove("resizing");
+  document.documentElement.classList.remove("panel-resizing");
+  saveUI();
+};
+resizer.addEventListener("pointerup", endResize);
+resizer.addEventListener("pointercancel", endResize);
+resizer.addEventListener("lostpointercapture", endResize);
+resizer.addEventListener("dblclick", () => { setPanelW(DEFAULT_W); saveUI(); });
+addEventListener("resize", () => setPanelW(UI.w));   // keep it inside the window
+setPanelW(UI.w);
+
+const btns = document.createElement("div");
+btns.className = "buttons";
+btns.innerHTML = `<button id="reCloth" class="primary">Reset motion</button><button id="reAll" class="secondary">Reset all</button>`;
+body.appendChild(btns);
+
+function syncControls() { for (const k in controls) controls[k].set(S[k]); document.body.style.background = S.bg; applyMode(); sndStatus(); }
+
+document.getElementById("reCloth").onclick = () => build();
+document.getElementById("reAll").onclick = () => { S = { ...DEFAULTS }; save(); syncControls(); build(); record("*", true); };
+
+const hintEl = document.getElementById("toggleHint");
+function toggle() {
+  panel.classList.toggle("collapsed");
+  hintEl.textContent = panel.classList.contains("collapsed") ? "Show ▾" : "Hide ▴";
+}
+document.getElementById("panelHead").addEventListener("click", toggle);
+addEventListener("keydown", e => {
+  if (e.key.toLowerCase() === "h" && !/^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName) && !document.activeElement.isContentEditable) toggle();
+});
+
+// show any .minibar scrollbar briefly while it scrolls (wheel / touch / keyboard), even if the pointer isn't over it.
+// scroll events don't bubble, so listen in the capture phase.
+document.addEventListener(scroll, e => {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains(minibar)) return;
+  el.classList.add(scrolling);
+  clearTimeout(el._barTimer);
+  el._barTimer = setTimeout(() => el.classList.remove(scrolling), 700);
+}, { capture: true, passive: true });
+
+/* =====================  Go  ===================== */
+syncControls();
+build();
+record("init", true);   // baseline for undo
+loop();
+// canvas draws every frame, so it picks Geist up as soon as the font has loaded
+["Geist", "Geist Mono", "Geist Pixel"].forEach(f => document.fonts && document.fonts.load(`400 12px "${f}"`).catch(() => {}));
+</script>
+</body>
+</html>
