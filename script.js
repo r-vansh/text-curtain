@@ -3,20 +3,20 @@ const DEFAULTS = {
   text: "VANSH RASTOGI // designer & developer // portfolio explorations // every thread is a line of text // move your cursor through the curtain",
   // per-letter styling of the text above: one hex digit per character, a sum of 1 bold, 2 italic, 4 underline, 8 strikethrough
   marks: "",
-  font: "Geist", fontSize: 10, fontWeight: 400,
-  textWidth: 600, maxHeight: 2000, cellX: 9, cellY: 12,
+  font: "Geist", fontSize: 16, fontWeight: 400,
+  textWidth: 600, maxHeight: 790, cellX: 20, cellY: 12,
   mode: "Rope",                            // "Rope": every line hangs on its own. "Fabric": lines are linked to their neighbours
   // rope
   stiffness: 16, swing: 0.994, gravity: 0.8, variation: 0.6,
   // sound (rope mode): every line is a string with its own pitch
-  sound: "On", sndVolume: 0.6, sndScale: "Pentatonic", sndRoot: "C", sndOctave: 3, sndRange: 2, sndTone: "Pluck", sndRing: 1.6,
+  sound: "On", sndVolume: 1, sndScale: "Pentatonic", sndRoot: "C", sndOctave: 3, sndRange: 2, sndTone: "Sine", sndRing: 1.6,
   // fabric (the first version's values)
   fStiffness: 4, fSwing: 0.985, fPullBack: 0.0009, fGravity: 0.35,
   fRadius: 90, fPush: 1.4, fDrag: 0.25,
   radius: 18,                              // finger size (px)
   grab: "On",                              // press on a line to pick it up and move it around
-  pushLimit: 26,                           // how far (px) the finger can carry a line sideways before it slips past
-  ink: "#1a1a1a", bg: "#f5f4f0",
+  pushLimit: 10,                           // how far (px) the finger can carry a line sideways before it slips past
+  ink: "#000ed6", bg: "#e2e3e9",
   _v: 4                                    // settings version (4 = finger cursor)
 };
 
